@@ -6,16 +6,12 @@ from flask import current_app
 
 config = context.config
 
-fileConfig(config.config_file_name)
+fileConfig(config.config_file_name, disable_existing_loggers=False)
 logger = logging.getLogger("alembic.env")
 
 
 def get_engine():
-    try:
-        # Compatibilidad con versiones anteriores de Flask-SQLAlchemy.
-        return current_app.extensions["migrate"].db.get_engine()
-    except (TypeError, AttributeError):
-        return current_app.extensions["migrate"].db.engine
+    return current_app.extensions["migrate"].db.engine
 
 
 def get_engine_url():

@@ -2,8 +2,8 @@ import re
 from datetime import date
 
 from flask import Blueprint, jsonify, request
-from app.auth import autenticar, exigir_operador
 
+from app.auth import autenticar, exigir_operador
 from app.errors import ErrorAPI
 from app.extensions import db
 from app.models import Activo
@@ -25,6 +25,7 @@ def proteger_activos():
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         exigir_operador()
 
+
 REQUERIDOS = ("codigo_inventario", "nombre", "categoria")
 EDITABLES = REQUERIDOS + (
     "marca",
@@ -37,7 +38,12 @@ EDITABLES = REQUERIDOS + (
 
 
 def _obtener_o_404(activo_id):
-    activo = db.session.scalar(db.select(Activo).where(Activo.id == activo_id).with_for_update().execution_options(populate_existing=True))
+    activo = db.session.scalar(
+        db.select(Activo)
+        .where(Activo.id == activo_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if activo is None:
         raise ErrorAPI("Activo no encontrado.", 404)
     return activo
@@ -53,7 +59,7 @@ def _validar(datos):
             "marca": 60,
             "modelo": 60,
             "numero_serie": 60,
-            "descripcion": None,
+            "descripcion": 10000,
             "estado": 20,
         },
         REQUERIDOS + ("estado",),
@@ -95,7 +101,7 @@ def _aplicar(activo, datos):
 
 @activos_bp.post("")
 def crear_activo():
-    datos = obtener_json()
+    datos = obtener_json(EDITABLES)
     validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
     _validar_unicos(datos)
@@ -121,14 +127,16 @@ def obtener_activo(activo_id):
 @activos_bp.route("/<int:activo_id>", methods=["PUT", "PATCH"])
 def actualizar_activo(activo_id):
     activo = _obtener_o_404(activo_id)
-    datos = obtener_json()
+    datos = obtener_json(EDITABLES, no_vacio=request.method == "PATCH")
     if request.method == "PUT":
         validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
     _validar_unicos(datos, excluir_id=activo.id)
 
     if activo.estado == "prestado" and "estado" in datos:
-        raise ErrorAPI("Un activo prestado solo cambia de estado mediante una devolución.", 409)
+        raise ErrorAPI(
+            "Un activo prestado solo cambia de estado mediante una devolución.", 409
+        )
 
     _aplicar(activo, datos)
     db.session.commit()

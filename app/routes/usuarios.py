@@ -1,9 +1,9 @@
 from flask import Blueprint, g, jsonify, request
-from app.auth import autenticar, es_operador, exigir_operador, exigir_propietario
 
+from app.auth import autenticar, es_operador, exigir_operador, exigir_propietario
 from app.errors import ErrorAPI
 from app.extensions import db
-from app.models import Usuario, Prestamo
+from app.models import Prestamo, Usuario
 from app.models.usuario import TIPOS_USUARIO
 from app.utils import (
     obtener_json,
@@ -22,13 +22,20 @@ EDITABLES = REQUERIDOS + ("telefono", "activo")
 
 
 def _obtener_o_404(usuario_id):
-    usuario = db.session.scalar(db.select(Usuario).where(Usuario.id == usuario_id).with_for_update().execution_options(populate_existing=True))
+    usuario = db.session.scalar(
+        db.select(Usuario)
+        .where(Usuario.id == usuario_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if usuario is None:
         raise ErrorAPI("Usuario no encontrado.", 404)
     return usuario
 
 
 def _validar(datos):
+    if isinstance(datos.get("email"), str):
+        datos["email"] = datos["email"].lower()
     validar_textos(
         datos,
         {
@@ -59,7 +66,12 @@ def _validar_unicos(datos, excluir_id=None):
 
 
 def _validar_desactivacion(usuario):
-    pendiente = db.session.scalar(db.select(Prestamo.id).where(Prestamo.usuario_id == usuario.id, Prestamo.fecha_devolucion.is_(None)).limit(1).with_for_update())
+    pendiente = db.session.scalar(
+        db.select(Prestamo.id)
+        .where(Prestamo.usuario_id == usuario.id, Prestamo.fecha_devolucion.is_(None))
+        .limit(1)
+        .with_for_update()
+    )
     if pendiente:
         raise ErrorAPI("El usuario tiene préstamos pendientes de devolución.", 409)
 
@@ -67,7 +79,7 @@ def _validar_desactivacion(usuario):
 @usuarios_bp.post("")
 def crear_usuario():
     exigir_operador()
-    datos = obtener_json()
+    datos = obtener_json(EDITABLES)
     validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
     _validar_unicos(datos)
@@ -96,7 +108,7 @@ def obtener_usuario(usuario_id):
 def actualizar_usuario(usuario_id):
     exigir_propietario(usuario_id)
     usuario = _obtener_o_404(usuario_id)
-    datos = obtener_json()
+    datos = obtener_json(EDITABLES, no_vacio=request.method == "PATCH")
     if request.method == "PUT":
         validar_requeridos(datos, REQUERIDOS)
     _validar(datos)

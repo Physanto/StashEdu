@@ -22,8 +22,12 @@ class OpenAPITests(unittest.TestCase):
             path = re.sub(r"<(?:(?:int|path|string):)?([^>]+)>", r"{\1}", rule.rule)
             for method in rule.methods - {"HEAD", "OPTIONS"}:
                 implemented.add((path, method.lower()))
-        documented = {(path, method) for path, item in self.spec["paths"].items()
-                      for method in item if method in {"get", "post", "put", "patch", "delete"}}
+        documented = {
+            (path, method)
+            for path, item in self.spec["paths"].items()
+            for method in item
+            if method in {"get", "post", "put", "patch", "delete"}
+        }
         self.assertEqual(implemented, documented)
 
     def test_all_references_resolve_and_operation_ids_are_unique(self):
@@ -39,8 +43,13 @@ class OpenAPITests(unittest.TestCase):
             elif isinstance(value, list):
                 for item in value:
                     visit(item)
+
         visit(self.spec)
-        ids = [operation["operationId"] for item in self.spec["paths"].values() for operation in item.values()]
+        ids = [
+            operation["operationId"]
+            for item in self.spec["paths"].values()
+            for operation in item.values()
+        ]
         self.assertEqual(len(ids), len(set(ids)))
 
     def test_security_bodies_statuses_and_pagination_contract(self):
@@ -52,7 +61,11 @@ class OpenAPITests(unittest.TestCase):
                 self.assertEqual(operation["security"], [])
         for path, item in self.spec["paths"].items():
             for method, operation in item.items():
-                if path not in ("/api/v1/health", "/api/v1/auth/register", "/api/v1/auth/login"):
+                if path not in (
+                    "/api/v1/health",
+                    "/api/v1/auth/register",
+                    "/api/v1/auth/login",
+                ):
                     self.assertIn("401", operation["responses"])
                 if method in ("post", "put", "patch"):
                     self.assertTrue(operation["requestBody"]["required"])
@@ -62,11 +75,15 @@ class OpenAPITests(unittest.TestCase):
                     self.assertNotIn("content", operation["responses"]["204"])
         for path in ("usuarios", "activos", "prestamos"):
             parameters = self.spec["paths"][f"/api/v1/{path}"]["get"]["parameters"]
-            self.assertEqual([parameter["name"] for parameter in parameters], ["page", "per_page"])
+            self.assertEqual(
+                [parameter["name"] for parameter in parameters], ["page", "per_page"]
+            )
             self.assertEqual(parameters[1]["schema"]["maximum"], 100)
         components = self.spec["components"]["schemas"]
         self.assertIn("prestado", components["Activo"]["properties"]["estado"]["enum"])
-        self.assertNotIn("prestado", components["ActivoCreate"]["properties"]["estado"]["enum"])
+        self.assertNotIn(
+            "prestado", components["ActivoCreate"]["properties"]["estado"]["enum"]
+        )
         self.assertEqual(components["Devolucion"]["maxProperties"], 0)
         self.assertFalse(components["Devolucion"]["additionalProperties"])
         self.assertEqual(components["UsuarioPatch"]["minProperties"], 1)
@@ -80,8 +97,14 @@ class OpenAPITests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.get_data(as_text=True)
         self.assertIn("/openapi.json", html)
-        for asset in ("swagger-ui.css", "swagger-ui-bundle.js", "swagger-ui-standalone-preset.js"):
-            urls = re.findall(r'(?:src|href)=["\']([^"\']*' + re.escape(asset) + r')["\']', html)
+        for asset in (
+            "swagger-ui.css",
+            "swagger-ui-bundle.js",
+            "swagger-ui-standalone-preset.js",
+        ):
+            urls = re.findall(
+                r'(?:src|href)=["\']([^"\']*' + re.escape(asset) + r')["\']', html
+            )
             self.assertTrue(urls, asset)
             for url in urls:
                 self.assertFalse(url.startswith(("https://", "http://", "//")))
@@ -94,5 +117,7 @@ class OpenAPITests(unittest.TestCase):
         try:
             from openapi_spec_validator import validate
         except ImportError:
-            self.skipTest("Instalar requirements-dev.txt para validar formalmente OpenAPI 3.0.3.")
+            self.skipTest(
+                "Instalar requirements-dev.txt para validar formalmente OpenAPI 3.0.3."
+            )
         validate(build_spec())

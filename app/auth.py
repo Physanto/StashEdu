@@ -13,8 +13,13 @@ from app.security import hash_password
 def _serializer():
     key = current_app.config.get("SECRET_KEY")
     if not isinstance(key, str) or len(key) < 32:
-        raise ErrorAPI("La autenticación requiere configurar SECRET_KEY con al menos 32 caracteres.", 503)
-    return URLSafeTimedSerializer(key, salt="stashedu-auth-v1", signer_kwargs={"digest_method": hashlib.sha256})
+        raise ErrorAPI(
+            "La autenticación requiere configurar SECRET_KEY con al menos 32 caracteres.",
+            503,
+        )
+    return URLSafeTimedSerializer(
+        key, salt="stashedu-auth-v1", signer_kwargs={"digest_method": hashlib.sha256}
+    )
 
 
 def _version(usuario):
@@ -36,13 +41,20 @@ def autenticar():
     if len(partes) != 2 or partes[0].lower() != "bearer":
         raise ErrorAPI("Se requiere un token Bearer válido.", 401)
     try:
-        datos = _serializer().loads(partes[1], max_age=current_app.config["AUTH_TOKEN_MAX_AGE"])
+        datos = _serializer().loads(
+            partes[1], max_age=current_app.config["AUTH_TOKEN_MAX_AGE"]
+        )
     except BadData:
         raise ErrorAPI("Token inválido o expirado.", 401)
     if not isinstance(datos, dict) or type(datos.get("usuario_id")) is not int:
         raise ErrorAPI("Token inválido.", 401)
     usuario = db.session.get(Usuario, datos["usuario_id"])
-    if usuario is None or not usuario.activo or not usuario.password_hash or datos.get("version") != _version(usuario):
+    if (
+        usuario is None
+        or not usuario.activo
+        or not usuario.password_hash
+        or datos.get("version") != _version(usuario)
+    ):
         raise ErrorAPI("Token inválido o usuario inactivo.", 401)
     g.usuario = usuario
 

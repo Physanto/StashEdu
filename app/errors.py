@@ -20,7 +20,9 @@ def registrar_errores(app):
     def manejar_integridad(error):
         db.session.rollback()
         # La restricción SQL también protege ante creaciones concurrentes.
-        if getattr(error.orig, "args", (None,))[0] == 1062:
+        if getattr(error.orig, "args", (None,))[0] == 1062 or getattr(
+            error.orig, "sqlite_errorcode", None
+        ) in (1555, 2067):
             return jsonify({"error": "Ya existe un registro con ese valor único."}), 409
         app.logger.exception("Error de integridad de la base de datos.")
         return jsonify({"error": "Error interno del servidor."}), 500

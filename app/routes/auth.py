@@ -34,16 +34,30 @@ def login():
     if set(datos) - {"email", "password"}:
         raise ErrorAPI("El login contiene campos no permitidos.")
     validar_requeridos(datos, ("email", "password"))
+    if isinstance(datos.get("email"), str):
+        datos["email"] = datos["email"].lower()
     validar_textos(datos, {"email": 120}, ("email",))
     validar_email(datos["email"])
     validar_password(datos["password"])
-    usuario = db.session.scalar(db.select(Usuario).where(Usuario.email == datos["email"]))
-    valido = verificar_password(usuario.password_hash if usuario and usuario.password_hash else dummy_hash(), datos["password"])
+    usuario = db.session.scalar(
+        db.select(Usuario).where(Usuario.email == datos["email"])
+    )
+    valido = verificar_password(
+        usuario.password_hash if usuario and usuario.password_hash else dummy_hash(),
+        datos["password"],
+    )
     if not usuario or not usuario.password_hash or not usuario.activo or not valido:
         raise ErrorAPI("Credenciales inválidas.", 401)
     from flask import current_app
-    return jsonify({"access_token": emitir_token(usuario), "token_type": "Bearer",
-                    "expires_in": current_app.config["AUTH_TOKEN_MAX_AGE"], "usuario": usuario.to_dict()})
+
+    return jsonify(
+        {
+            "access_token": emitir_token(usuario),
+            "token_type": "Bearer",
+            "expires_in": current_app.config["AUTH_TOKEN_MAX_AGE"],
+            "usuario": usuario.to_dict(),
+        }
+    )
 
 
 @auth_bp.get("/me")

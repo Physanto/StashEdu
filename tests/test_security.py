@@ -21,14 +21,14 @@ class PasswordTests(unittest.TestCase):
 
     def test_invalid_passwords(self):
         for value in [None, {}, [], True, 123, "short", " " * 12, "a" * 129]:
-            with self.subTest(value=type(value).__name__):
-                with self.assertRaises(ErrorAPI):
-                    hash_password(value)
+            with self.subTest(value=type(value).__name__), self.assertRaises(ErrorAPI):
+                hash_password(value)
 
 
 class PasswordPersistenceTests(APITestCase):
     def test_hash_never_serialized(self):
         from app.extensions import db
+
         user = db.session.get(Usuario, 1)
         self.assertNotIn("password_hash", user.to_dict())
         user.set_password("Una contraseña segura")

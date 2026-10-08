@@ -1,5 +1,6 @@
 import unittest
 from datetime import timedelta
+from typing import ClassVar
 from unittest.mock import patch
 
 from app import create_app
@@ -12,7 +13,7 @@ class TestConfig:
     TESTING = True
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
-    SQLALCHEMY_ENGINE_OPTIONS = {}
+    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {}
     SECRET_KEY = "test-only-secret-key-with-at-least-32-characters"
     AUTH_TOKEN_MAX_AGE = 3600
     API_OPERATOR_IDS = (1,)
@@ -25,18 +26,28 @@ class APITestCase(unittest.TestCase):
         self.ctx.push()
         db.create_all()
         self.client = self.app.test_client()
-        db.session.add_all([
-            Usuario(nombre_completo="Ana", documento="001", email="ana@example.com", tipo_usuario="docente"),
-            Activo(codigo_inventario="A1", nombre="Portátil", categoria="portatil"),
-        ])
+        db.session.add_all(
+            [
+                Usuario(
+                    nombre_completo="Ana",
+                    documento="001",
+                    email="ana@example.com",
+                    tipo_usuario="docente",
+                ),
+                Activo(codigo_inventario="A1", nombre="Portátil", categoria="portatil"),
+            ]
+        )
         db.session.commit()
         from app.auth import emitir_token
         from app.security import hash_password
+
         if not hasattr(APITestCase, "fixture_hash"):
             APITestCase.fixture_hash = hash_password("Test password seguro")
         db.session.get(Usuario, 1).password_hash = APITestCase.fixture_hash
         db.session.commit()
-        self.client.environ_base["HTTP_AUTHORIZATION"] = "Bearer " + emitir_token(db.session.get(Usuario, 1))
+        self.client.environ_base["HTTP_AUTHORIZATION"] = "Bearer " + emitir_token(
+            db.session.get(Usuario, 1)
+        )
 
     def tearDown(self):
         db.session.remove()
@@ -44,7 +55,12 @@ class APITestCase(unittest.TestCase):
         self.ctx.pop()
 
     def loan(self, **changes):
-        body = {"usuario_id": 1, "activo_id": 1, "fecha_devolucion_prevista": (_ahora() + timedelta(days=7)).isoformat() + "Z"}
+        body = {
+            "usuario_id": 1,
+            "activo_id": 1,
+            "fecha_devolucion_prevista": (_ahora() + timedelta(days=7)).isoformat()
+            + "Z",
+        }
         body.update(changes)
         return self.client.post("/api/v1/prestamos", json=body)
 
@@ -62,10 +78,18 @@ class LoanTests(APITestCase):
     def test_double_loan_and_state_protection(self):
         self.assertEqual(self.loan().status_code, 201)
         self.assertEqual(self.loan().status_code, 409)
-        self.assertEqual(self.client.patch("/api/v1/activos/1", json={"estado": "disponible"}).status_code, 409)
+        self.assertEqual(
+            self.client.patch(
+                "/api/v1/activos/1", json={"estado": "disponible"}
+            ).status_code,
+            409,
+        )
         self.assertEqual(self.client.delete("/api/v1/activos/1").status_code, 409)
         self.assertEqual(self.client.delete("/api/v1/usuarios/1").status_code, 409)
-        self.assertEqual(self.client.patch("/api/v1/usuarios/1", json={"activo": False}).status_code, 409)
+        self.assertEqual(
+            self.client.patch("/api/v1/usuarios/1", json={"activo": False}).status_code,
+            409,
+        )
         self.assertEqual(db.session.get(Activo, 1).estado, "prestado")
         self.assertTrue(db.session.get(Usuario, 1).activo)
 
@@ -73,9 +97,18 @@ class LoanTests(APITestCase):
         for value in [True, 0, -1, "1", 1.1, [], None]:
             with self.subTest(value=value):
                 self.assertEqual(self.loan(usuario_id=value).status_code, 400)
-        for value in ["2020-01-01T00:00:00Z", "2099-01-01", "2099-01-01T00:00:00", "invalid", {}, None]:
+        for value in [
+            "2020-01-01T00:00:00Z",
+            "2099-01-01",
+            "2099-01-01T00:00:00",
+            "invalid",
+            {},
+            None,
+        ]:
             with self.subTest(value=value):
-                self.assertEqual(self.loan(fecha_devolucion_prevista=value).status_code, 400)
+                self.assertEqual(
+                    self.loan(fecha_devolucion_prevista=value).status_code, 400
+                )
         self.assertEqual(db.session.scalar(db.select(db.func.count(Prestamo.id))), 0)
 
     def test_unavailable_and_missing(self):
@@ -85,13 +118,27 @@ class LoanTests(APITestCase):
             db.session.get(Activo, 1).estado = state
             db.session.commit()
             self.assertEqual(self.loan().status_code, 409)
-        db.session.add(Usuario(nombre_completo="Inactivo", documento="003", email="off@example.com", tipo_usuario="estudiante", activo=False))
+        db.session.add(
+            Usuario(
+                nombre_completo="Inactivo",
+                documento="003",
+                email="off@example.com",
+                tipo_usuario="estudiante",
+                activo=False,
+            )
+        )
         db.session.commit()
         self.assertEqual(self.loan(usuario_id=2).status_code, 409)
 
     def test_failed_insert_rolls_back_reservation(self):
-        with patch.object(db.session, "commit", side_effect=RuntimeError("simulated commit failure")):
-            with self.assertLogs(self.app.logger, level="ERROR"):
-                self.assertEqual(self.loan().status_code, 500)
+        with (
+            patch.object(
+                db.session,
+                "commit",
+                side_effect=RuntimeError("simulated commit failure"),
+            ),
+            self.assertLogs(self.app.logger, level="ERROR"),
+        ):
+            self.assertEqual(self.loan().status_code, 500)
         self.assertEqual(db.session.get(Activo, 1).estado, "disponible")
         self.assertEqual(db.session.scalar(db.select(db.func.count(Prestamo.id))), 0)

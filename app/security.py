@@ -7,13 +7,27 @@ PASSWORD_METHOD = "scrypt:32768:8:1"
 
 def validar_password(password):
     # La contraseña se conserva exactamente: no recortar ni normalizar espacios.
-    if not isinstance(password, str) or not 12 <= len(password) <= 128 or not password.strip():
-        raise ErrorAPI("La contraseña debe ser texto no vacío de entre 12 y 128 caracteres.")
+    if (
+        not isinstance(password, str)
+        or not 12 <= len(password) <= 128
+        or not password.strip()
+    ):
+        raise ErrorAPI(
+            "La contraseña debe ser texto no vacío de entre 12 y 128 caracteres."
+        )
+    try:
+        password.encode("utf-8")
+    except UnicodeError:
+        raise ErrorAPI("La contraseña contiene texto Unicode inválido.")
+    if "\x00" in password:
+        raise ErrorAPI("La contraseña contiene caracteres inválidos.")
     return password
 
 
 def hash_password(password):
-    return generate_password_hash(validar_password(password), method=PASSWORD_METHOD, salt_length=16)
+    return generate_password_hash(
+        validar_password(password), method=PASSWORD_METHOD, salt_length=16
+    )
 
 
 def verificar_password(password_hash, password):

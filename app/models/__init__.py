@@ -1,5 +1,5 @@
 from app.models.activo import Activo
-from app.models.usuario import Usuario
 from app.models.prestamo import Prestamo
+from app.models.usuario import Usuario
 
-__all__ = ["Activo", "Usuario", "Prestamo"]
+__all__ = ["Activo", "Prestamo", "Usuario"]
