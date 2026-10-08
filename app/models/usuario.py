@@ -14,6 +14,16 @@ class Usuario(TimestampMixin, db.Model):
     telefono = db.Column(db.String(20))
     tipo_usuario = db.Column(db.String(20), nullable=False)
     activo = db.Column(db.Boolean, nullable=False, default=True)
+    # Nullable permite migrar usuarios históricos sin inventar contraseñas.
+    password_hash = db.Column(db.String(255))
+
+    def set_password(self, password):
+        from app.security import hash_password
+        self.password_hash = hash_password(password)
+
+    def check_password(self, password):
+        from app.security import verificar_password
+        return verificar_password(self.password_hash, password)
 
     def to_dict(self):
         return {
