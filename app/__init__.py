@@ -18,6 +18,8 @@ def create_app(config_class=Config):
     from app import models  # noqa: F401  (registra los modelos para las migraciones)
     from app.routes import activos_bp, health_bp, usuarios_bp, prestamos_bp, auth_bp
     from app.commands import set_password
+    from app.openapi import docs_bp
+    from flask_swagger_ui import get_swaggerui_blueprint
 
     app.register_blueprint(health_bp)
     app.register_blueprint(usuarios_bp)
@@ -25,6 +27,10 @@ def create_app(config_class=Config):
     app.register_blueprint(prestamos_bp)
     app.register_blueprint(auth_bp)
     app.cli.add_command(set_password)
+    app.register_blueprint(docs_bp)
+    app.register_blueprint(get_swaggerui_blueprint("/docs", "/openapi.json", config={
+        "app_name": "StashEdu", "validatorUrl": None, "persistAuthorization": False,
+    }))
     registrar_errores(app)
 
     return app
