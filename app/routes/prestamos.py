@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, g, jsonify
+from app.auth import autenticar, es_operador, exigir_propietario
 
 from app.errors import ErrorAPI
 from app.extensions import db
@@ -9,6 +10,7 @@ from app.models.mixins import _ahora
 from app.utils import obtener_json, paginar, validar_requeridos, validar_textos
 
 prestamos_bp = Blueprint("prestamos", __name__, url_prefix="/api/v1/prestamos")
+prestamos_bp.before_request(autenticar)
 
 
 def _id(valor, campo):
@@ -34,6 +36,7 @@ def crear_prestamo():
     datos = obtener_json()
     validar_requeridos(datos, ("usuario_id", "activo_id", "fecha_devolucion_prevista"))
     usuario_id = _id(datos["usuario_id"], "usuario_id")
+    exigir_propietario(usuario_id)
     activo_id = _id(datos["activo_id"], "activo_id")
     prevista = _fecha(datos["fecha_devolucion_prevista"])
     validar_textos(datos, {"observaciones": 1000}, ())
@@ -64,7 +67,10 @@ def crear_prestamo():
 
 @prestamos_bp.get("")
 def listar_prestamos():
-    return jsonify(paginar(db.select(Prestamo).order_by(Prestamo.id), Prestamo.to_dict))
+    consulta = db.select(Prestamo).order_by(Prestamo.id)
+    if not es_operador():
+        consulta = consulta.where(Prestamo.usuario_id == g.usuario.id)
+    return jsonify(paginar(consulta, Prestamo.to_dict))
 
 
 @prestamos_bp.get("/<int:prestamo_id>")
@@ -72,6 +78,7 @@ def obtener_prestamo(prestamo_id):
     prestamo = db.session.get(Prestamo, prestamo_id)
     if prestamo is None:
         raise ErrorAPI("Préstamo no encontrado.", 404)
+    exigir_propietario(prestamo.usuario_id)
     return jsonify(prestamo.to_dict())
 
 
@@ -87,6 +94,7 @@ def registrar_devolucion(prestamo_id):
     )
     if prestamo is None:
         raise ErrorAPI("Préstamo no encontrado.", 404)
+    exigir_propietario(prestamo.usuario_id)
     if prestamo.fecha_devolucion is not None:
         raise ErrorAPI("El préstamo ya fue devuelto.", 409)
     liberacion = db.session.execute(

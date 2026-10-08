@@ -1,4 +1,5 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+from app.auth import autenticar, es_operador, exigir_operador, exigir_propietario
 
 from app.errors import ErrorAPI
 from app.extensions import db
@@ -14,6 +15,7 @@ from app.utils import (
 )
 
 usuarios_bp = Blueprint("usuarios", __name__, url_prefix="/api/v1/usuarios")
+usuarios_bp.before_request(autenticar)
 
 REQUERIDOS = ("nombre_completo", "documento", "email", "tipo_usuario")
 EDITABLES = REQUERIDOS + ("telefono", "activo")
@@ -64,6 +66,7 @@ def _validar_desactivacion(usuario):
 
 @usuarios_bp.post("")
 def crear_usuario():
+    exigir_operador()
     datos = obtener_json()
     validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
@@ -78,16 +81,20 @@ def crear_usuario():
 @usuarios_bp.get("")
 def listar_usuarios():
     consulta = db.select(Usuario).order_by(Usuario.id)
+    if not es_operador():
+        consulta = consulta.where(Usuario.id == g.usuario.id)
     return jsonify(paginar(consulta, Usuario.to_dict))
 
 
 @usuarios_bp.get("/<int:usuario_id>")
 def obtener_usuario(usuario_id):
+    exigir_propietario(usuario_id)
     return jsonify(_obtener_o_404(usuario_id).to_dict())
 
 
 @usuarios_bp.route("/<int:usuario_id>", methods=["PUT", "PATCH"])
 def actualizar_usuario(usuario_id):
+    exigir_propietario(usuario_id)
     usuario = _obtener_o_404(usuario_id)
     datos = obtener_json()
     if request.method == "PUT":
@@ -106,6 +113,7 @@ def actualizar_usuario(usuario_id):
 
 @usuarios_bp.delete("/<int:usuario_id>")
 def desactivar_usuario(usuario_id):
+    exigir_propietario(usuario_id)
     """Baja lógica: conserva el registro para no romper el historial futuro."""
     usuario = _obtener_o_404(usuario_id)
     _validar_desactivacion(usuario)

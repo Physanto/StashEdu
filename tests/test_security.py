@@ -30,7 +30,7 @@ class PasswordPersistenceTests(APITestCase):
     def test_hash_never_serialized(self):
         from app.extensions import db
         user = db.session.get(Usuario, 1)
-        self.assertIsNone(user.password_hash)
+        self.assertNotIn("password_hash", user.to_dict())
         user.set_password("Una contraseña segura")
         db.session.commit()
         self.assertTrue(user.check_password("Una contraseña segura"))

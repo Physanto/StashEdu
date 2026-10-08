@@ -15,6 +15,7 @@ class TestConfig:
     SQLALCHEMY_ENGINE_OPTIONS = {}
     SECRET_KEY = "test-only-secret-key-with-at-least-32-characters"
     AUTH_TOKEN_MAX_AGE = 3600
+    API_OPERATOR_IDS = (1,)
 
 
 class APITestCase(unittest.TestCase):
@@ -29,6 +30,13 @@ class APITestCase(unittest.TestCase):
             Activo(codigo_inventario="A1", nombre="Portátil", categoria="portatil"),
         ])
         db.session.commit()
+        from app.auth import emitir_token
+        from app.security import hash_password
+        if not hasattr(APITestCase, "fixture_hash"):
+            APITestCase.fixture_hash = hash_password("Test password seguro")
+        db.session.get(Usuario, 1).password_hash = APITestCase.fixture_hash
+        db.session.commit()
+        self.client.environ_base["HTTP_AUTHORIZATION"] = "Bearer " + emitir_token(db.session.get(Usuario, 1))
 
     def tearDown(self):
         db.session.remove()
@@ -77,9 +85,9 @@ class LoanTests(APITestCase):
             db.session.get(Activo, 1).estado = state
             db.session.commit()
             self.assertEqual(self.loan().status_code, 409)
-        db.session.get(Usuario, 1).activo = False
+        db.session.add(Usuario(nombre_completo="Inactivo", documento="003", email="off@example.com", tipo_usuario="estudiante", activo=False))
         db.session.commit()
-        self.assertEqual(self.loan().status_code, 409)
+        self.assertEqual(self.loan(usuario_id=2).status_code, 409)
 
     def test_failed_insert_rolls_back_reservation(self):
         with patch.object(db.session, "commit", side_effect=RuntimeError("simulated commit failure")):

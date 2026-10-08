@@ -37,7 +37,11 @@ def registrar_errores(app):
         cuerpo = {"error": error.mensaje}
         if error.detalles:
             cuerpo["detalles"] = error.detalles
-        return jsonify(cuerpo), error.codigo
+        respuesta = jsonify(cuerpo)
+        respuesta.status_code = error.codigo
+        if error.codigo == 401:
+            respuesta.headers["WWW-Authenticate"] = "Bearer"
+        return respuesta
 
     @app.errorhandler(HTTPException)
     def manejar_http(error):

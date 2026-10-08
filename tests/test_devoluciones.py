@@ -39,6 +39,13 @@ class ReturnTests(APITestCase):
     def test_logical_deletion_after_return_preserves_history(self):
         self.loan()
         self.client.post("/api/v1/prestamos/1/devolucion", json={})
-        self.assertEqual(self.client.delete("/api/v1/usuarios/1").status_code, 204)
         self.assertEqual(self.client.delete("/api/v1/activos/1").status_code, 204)
+        self.assertEqual(self.client.delete("/api/v1/usuarios/1").status_code, 204)
+        from app.auth import emitir_token
+        from app.models import Usuario
+        user = Usuario(nombre_completo="Operador", documento="002", email="op@example.com", tipo_usuario="funcionario", password_hash=self.fixture_hash)
+        db.session.add(user)
+        db.session.commit()
+        self.app.config["API_OPERATOR_IDS"] = (2,)
+        self.client.environ_base["HTTP_AUTHORIZATION"] = "Bearer " + emitir_token(user)
         self.assertEqual(self.client.get("/api/v1/prestamos/1").status_code, 200)

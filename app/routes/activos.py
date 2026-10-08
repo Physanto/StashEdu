@@ -2,6 +2,7 @@ import re
 from datetime import date
 
 from flask import Blueprint, jsonify, request
+from app.auth import autenticar, exigir_operador
 
 from app.errors import ErrorAPI
 from app.extensions import db
@@ -16,6 +17,13 @@ from app.utils import (
 )
 
 activos_bp = Blueprint("activos", __name__, url_prefix="/api/v1/activos")
+
+
+@activos_bp.before_request
+def proteger_activos():
+    autenticar()
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        exigir_operador()
 
 REQUERIDOS = ("codigo_inventario", "nombre", "categoria")
 EDITABLES = REQUERIDOS + (
