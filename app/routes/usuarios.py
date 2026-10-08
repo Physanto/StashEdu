@@ -2,7 +2,7 @@ from flask import Blueprint, jsonify, request
 
 from app.errors import ErrorAPI
 from app.extensions import db
-from app.models import Usuario
+from app.models import Usuario, Prestamo
 from app.models.usuario import TIPOS_USUARIO
 from app.utils import (
     obtener_json,
@@ -20,7 +20,7 @@ EDITABLES = REQUERIDOS + ("telefono", "activo")
 
 
 def _obtener_o_404(usuario_id):
-    usuario = db.session.get(Usuario, usuario_id)
+    usuario = db.session.scalar(db.select(Usuario).where(Usuario.id == usuario_id).with_for_update().execution_options(populate_existing=True))
     if usuario is None:
         raise ErrorAPI("Usuario no encontrado.", 404)
     return usuario
@@ -56,6 +56,12 @@ def _validar_unicos(datos, excluir_id=None):
                 raise ErrorAPI(f"Ya existe un usuario con ese {campo}.", 409)
 
 
+def _validar_desactivacion(usuario):
+    pendiente = db.session.scalar(db.select(Prestamo.id).where(Prestamo.usuario_id == usuario.id, Prestamo.fecha_devolucion.is_(None)).limit(1).with_for_update())
+    if pendiente:
+        raise ErrorAPI("El usuario tiene préstamos pendientes de devolución.", 409)
+
+
 @usuarios_bp.post("")
 def crear_usuario():
     datos = obtener_json()
@@ -88,6 +94,8 @@ def actualizar_usuario(usuario_id):
         validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
     _validar_unicos(datos, excluir_id=usuario.id)
+    if datos.get("activo") is False:
+        _validar_desactivacion(usuario)
 
     for campo in EDITABLES:
         if campo in datos:
@@ -100,6 +108,7 @@ def actualizar_usuario(usuario_id):
 def desactivar_usuario(usuario_id):
     """Baja lógica: conserva el registro para no romper el historial futuro."""
     usuario = _obtener_o_404(usuario_id)
+    _validar_desactivacion(usuario)
     usuario.activo = False
     db.session.commit()
     return "", 204

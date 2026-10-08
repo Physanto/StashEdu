@@ -1,0 +1,75 @@
+from datetime import datetime, timezone
+
+from flask import Blueprint, jsonify
+
+from app.errors import ErrorAPI
+from app.extensions import db
+from app.models import Activo, Prestamo, Usuario
+from app.models.mixins import _ahora
+from app.utils import obtener_json, paginar, validar_requeridos, validar_textos
+
+prestamos_bp = Blueprint("prestamos", __name__, url_prefix="/api/v1/prestamos")
+
+
+def _id(valor, campo):
+    if type(valor) is not int or valor < 1:
+        raise ErrorAPI(f"'{campo}' debe ser un entero positivo.")
+    return valor
+
+
+def _fecha(valor):
+    try:
+        if not isinstance(valor, str) or "T" not in valor:
+            raise ValueError
+        fecha = datetime.fromisoformat(valor.replace("Z", "+00:00"))
+        if fecha.tzinfo is None:
+            raise ValueError
+        return fecha.astimezone(timezone.utc).replace(tzinfo=None)
+    except (ValueError, TypeError, OverflowError):
+        raise ErrorAPI("fecha_devolucion_prevista debe ser una fecha ISO 8601 con zona horaria.")
+
+
+@prestamos_bp.post("")
+def crear_prestamo():
+    datos = obtener_json()
+    validar_requeridos(datos, ("usuario_id", "activo_id", "fecha_devolucion_prevista"))
+    usuario_id = _id(datos["usuario_id"], "usuario_id")
+    activo_id = _id(datos["activo_id"], "activo_id")
+    prevista = _fecha(datos["fecha_devolucion_prevista"])
+    validar_textos(datos, {"observaciones": 1000}, ())
+    ahora = _ahora()
+    if prevista <= ahora:
+        raise ErrorAPI("La devolución prevista debe ser posterior al momento del préstamo.")
+    usuario = db.session.scalar(db.select(Usuario).where(Usuario.id == usuario_id).with_for_update().execution_options(populate_existing=True))
+    if usuario is None:
+        raise ErrorAPI("Usuario no encontrado.", 404)
+    if not usuario.activo:
+        raise ErrorAPI("El usuario está inactivo.", 409)
+    # La actualización condicional reserva el activo y serializa préstamos concurrentes.
+    reserva = db.session.execute(
+        db.update(Activo).where(Activo.id == activo_id, Activo.estado == "disponible").values(estado="prestado")
+    )
+    if reserva.rowcount != 1:
+        existe = db.session.get(Activo, activo_id)
+        raise ErrorAPI("Activo no encontrado." if existe is None else "El activo no está disponible.", 404 if existe is None else 409)
+    ahora = _ahora()
+    if prevista <= ahora:
+        raise ErrorAPI("La devolución prevista venció mientras se reservaba el activo.")
+    prestamo = Prestamo(usuario_id=usuario_id, activo_id=activo_id, fecha_prestamo=ahora,
+                        fecha_devolucion_prevista=prevista, observaciones=datos.get("observaciones"))
+    db.session.add(prestamo)
+    db.session.commit()
+    return jsonify(prestamo.to_dict()), 201
+
+
+@prestamos_bp.get("")
+def listar_prestamos():
+    return jsonify(paginar(db.select(Prestamo).order_by(Prestamo.id), Prestamo.to_dict))
+
+
+@prestamos_bp.get("/<int:prestamo_id>")
+def obtener_prestamo(prestamo_id):
+    prestamo = db.session.get(Prestamo, prestamo_id)
+    if prestamo is None:
+        raise ErrorAPI("Préstamo no encontrado.", 404)
+    return jsonify(prestamo.to_dict())
