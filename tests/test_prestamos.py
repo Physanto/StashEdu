@@ -83,6 +83,7 @@ class LoanTests(APITestCase):
 
     def test_failed_insert_rolls_back_reservation(self):
         with patch.object(db.session, "commit", side_effect=RuntimeError("simulated commit failure")):
-            self.assertEqual(self.loan().status_code, 500)
+            with self.assertLogs(self.app.logger, level="ERROR"):
+                self.assertEqual(self.loan().status_code, 500)
         self.assertEqual(db.session.get(Activo, 1).estado, "disponible")
         self.assertEqual(db.session.scalar(db.select(db.func.count(Prestamo.id))), 0)

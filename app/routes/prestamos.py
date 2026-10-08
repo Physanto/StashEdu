@@ -73,3 +73,28 @@ def obtener_prestamo(prestamo_id):
     if prestamo is None:
         raise ErrorAPI("Préstamo no encontrado.", 404)
     return jsonify(prestamo.to_dict())
+
+
+@prestamos_bp.post("/<int:prestamo_id>/devolucion")
+def registrar_devolucion(prestamo_id):
+    # El cuerpo vacío no es necesario: usar {} permite extender el contrato después.
+    datos = obtener_json()
+    if datos:
+        raise ErrorAPI("La devolución solo acepta un objeto JSON vacío.")
+    prestamo = db.session.scalar(
+        db.select(Prestamo).where(Prestamo.id == prestamo_id).with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if prestamo is None:
+        raise ErrorAPI("Préstamo no encontrado.", 404)
+    if prestamo.fecha_devolucion is not None:
+        raise ErrorAPI("El préstamo ya fue devuelto.", 409)
+    liberacion = db.session.execute(
+        db.update(Activo).where(Activo.id == prestamo.activo_id, Activo.estado == "prestado")
+        .values(estado="disponible")
+    )
+    if liberacion.rowcount != 1:
+        raise ErrorAPI("El estado del activo no coincide con un préstamo vigente.", 409)
+    prestamo.fecha_devolucion = max(_ahora(), prestamo.fecha_prestamo)
+    db.session.commit()
+    return jsonify(prestamo.to_dict())
