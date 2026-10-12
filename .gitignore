@@ -1,0 +1,48 @@
+# Python y entornos virtuales
+__pycache__/
+*.py[cod]
+.venv/
+.venv-anterior/
+venv/
+env/
+
+# Credenciales y configuración privada
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Cachés y resultados de herramientas
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+*.log
+
+# Datos de ejecución y herramientas de desarrollo
+instance/
+.local-tools/
+.codex/
+
+# Configuración personal de editores
+.idea/
+.vscode/
+*.iml
+
+# Workspace y variables personales de Postman
+.postman/
+postman/globals/
+postman/environments/*.local.*
+
+# Distribuciones de Python
+build/
+dist/
+*.egg-info/
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+Desktop.ini
+

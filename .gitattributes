@@ -1,0 +1,6 @@
+*.py text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.mako text eol=lf
+*.ini text eol=lf
