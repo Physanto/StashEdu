@@ -1,13 +1,11 @@
-import re
-from datetime import date
-
 from flask import Blueprint, jsonify, request
 
 from app.errors import ErrorAPI
 from app.extensions import db
 from app.models import Activo
-from app.models.activo import CATEGORIAS, ESTADOS_EDITABLES
+from app.models.activo import CATEGORIAS, ESTADOS, ESTADOS_EDITABLES
 from app.utils import (
+    filtro_opcion,
     obtener_json,
     paginar,
     validar_opcion,
@@ -18,14 +16,7 @@ from app.utils import (
 activos_bp = Blueprint("activos", __name__, url_prefix="/api/v1/activos")
 
 REQUERIDOS = ("codigo_inventario", "nombre", "categoria")
-EDITABLES = REQUERIDOS + (
-    "marca",
-    "modelo",
-    "numero_serie",
-    "descripcion",
-    "estado",
-    "fecha_adquisicion",
-)
+EDITABLES = REQUERIDOS + ("marca", "modelo", "numero_serie", "estado")
 
 
 def _obtener_o_404(activo_id):
@@ -45,7 +36,6 @@ def _validar(datos):
             "marca": 60,
             "modelo": 60,
             "numero_serie": 60,
-            "descripcion": None,
             "estado": 20,
         },
         REQUERIDOS + ("estado",),
@@ -54,16 +44,6 @@ def _validar(datos):
         validar_opcion(datos["categoria"], CATEGORIAS, "categoria")
     if "estado" in datos:
         validar_opcion(datos["estado"], ESTADOS_EDITABLES, "estado")
-    if "fecha_adquisicion" in datos and datos["fecha_adquisicion"] is not None:
-        try:
-            valor = datos["fecha_adquisicion"]
-            if not isinstance(valor, str) or not re.fullmatch(
-                r"\d{4}-\d{2}-\d{2}", valor
-            ):
-                raise ValueError
-            date.fromisoformat(valor)
-        except (TypeError, ValueError):
-            raise ErrorAPI("fecha_adquisicion debe tener formato YYYY-MM-DD.", 400)
 
 
 def _validar_unicos(datos, excluir_id=None):
@@ -76,15 +56,6 @@ def _validar_unicos(datos, excluir_id=None):
                 raise ErrorAPI(f"Ya existe un activo con ese {campo}.", 409)
 
 
-def _aplicar(activo, datos):
-    for campo in EDITABLES:
-        if campo in datos:
-            valor = datos[campo]
-            if campo == "fecha_adquisicion" and valor:
-                valor = date.fromisoformat(valor)
-            setattr(activo, campo, valor)
-
-
 @activos_bp.post("")
 def crear_activo():
     datos = obtener_json()
@@ -92,8 +63,7 @@ def crear_activo():
     _validar(datos)
     _validar_unicos(datos)
 
-    activo = Activo()
-    _aplicar(activo, datos)
+    activo = Activo(**{c: datos[c] for c in EDITABLES if c in datos})
     db.session.add(activo)
     db.session.commit()
     return jsonify(activo.to_dict()), 201
@@ -102,6 +72,13 @@ def crear_activo():
 @activos_bp.get("")
 def listar_activos():
     consulta = db.select(Activo).order_by(Activo.id)
+    # Aquí el filtro por estado sí acepta "prestado": es una búsqueda, no una edición.
+    estado = filtro_opcion("estado", ESTADOS)
+    if estado is not None:
+        consulta = consulta.where(Activo.estado == estado)
+    categoria = filtro_opcion("categoria", CATEGORIAS)
+    if categoria is not None:
+        consulta = consulta.where(Activo.categoria == categoria)
     return jsonify(paginar(consulta, Activo.to_dict))
 
 
@@ -119,7 +96,9 @@ def actualizar_activo(activo_id):
     _validar(datos)
     _validar_unicos(datos, excluir_id=activo.id)
 
-    _aplicar(activo, datos)
+    for campo in EDITABLES:
+        if campo in datos:
+            setattr(activo, campo, datos[campo])
     db.session.commit()
     return jsonify(activo.to_dict())
 

@@ -2,21 +2,21 @@ from flask import Blueprint, jsonify, request
 
 from app.errors import ErrorAPI
 from app.extensions import db
-from app.models import Usuario
-from app.models.usuario import TIPOS_USUARIO
+from app.models import TipoUsuario, Usuario
 from app.utils import (
+    filtro_booleano,
+    filtro_entero,
     obtener_json,
     paginar,
     validar_email,
-    validar_opcion,
     validar_requeridos,
     validar_textos,
 )
 
 usuarios_bp = Blueprint("usuarios", __name__, url_prefix="/api/v1/usuarios")
 
-REQUERIDOS = ("nombre_completo", "documento", "email", "tipo_usuario")
-EDITABLES = REQUERIDOS + ("telefono", "activo")
+REQUERIDOS = ("nombre_completo", "documento", "email", "tipo_usuario_id")
+EDITABLES = REQUERIDOS + ("telefono", "habilitado")
 
 
 def _obtener_o_404(usuario_id):
@@ -34,16 +34,26 @@ def _validar(datos):
             "documento": 20,
             "email": 120,
             "telefono": 20,
-            "tipo_usuario": 20,
         },
         REQUERIDOS,
     )
     if "email" in datos:
         validar_email(datos["email"])
-    if "tipo_usuario" in datos:
-        validar_opcion(datos["tipo_usuario"], TIPOS_USUARIO, "tipo_usuario")
-    if "activo" in datos and not isinstance(datos["activo"], bool):
-        raise ErrorAPI("El campo 'activo' debe ser true o false.", 400)
+    if "tipo_usuario_id" in datos:
+        tipo_id = datos["tipo_usuario_id"]
+        # bool es subclase de int en Python: se descarta de forma explícita.
+        if (
+            isinstance(tipo_id, bool)
+            or not isinstance(tipo_id, int)
+            or db.session.get(TipoUsuario, tipo_id) is None
+        ):
+            raise ErrorAPI(
+                "tipo_usuario_id no corresponde a un tipo de usuario existente "
+                "(consulte GET /api/v1/tipos-usuario).",
+                400,
+            )
+    if "habilitado" in datos and not isinstance(datos["habilitado"], bool):
+        raise ErrorAPI("El campo 'habilitado' debe ser true o false.", 400)
 
 
 def _validar_unicos(datos, excluir_id=None):
@@ -72,6 +82,12 @@ def crear_usuario():
 @usuarios_bp.get("")
 def listar_usuarios():
     consulta = db.select(Usuario).order_by(Usuario.id)
+    tipo_usuario_id = filtro_entero("tipo_usuario_id")
+    if tipo_usuario_id is not None:
+        consulta = consulta.where(Usuario.tipo_usuario_id == tipo_usuario_id)
+    habilitado = filtro_booleano("habilitado")
+    if habilitado is not None:
+        consulta = consulta.where(Usuario.habilitado == habilitado)
     return jsonify(paginar(consulta, Usuario.to_dict))
 
 
@@ -97,9 +113,9 @@ def actualizar_usuario(usuario_id):
 
 
 @usuarios_bp.delete("/<int:usuario_id>")
-def desactivar_usuario(usuario_id):
-    """Baja lógica: conserva el registro para no romper el historial futuro."""
+def deshabilitar_usuario(usuario_id):
+    """Baja lógica: conserva el registro para no romper el historial de préstamos."""
     usuario = _obtener_o_404(usuario_id)
-    usuario.activo = False
+    usuario.habilitado = False
     db.session.commit()
     return "", 204

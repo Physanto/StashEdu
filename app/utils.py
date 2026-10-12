@@ -58,6 +58,38 @@ def validar_textos(datos, limites, requeridos):
         datos[campo] = valor or None
 
 
+def filtro_opcion(nombre, opciones):
+    """Lee ?nombre=valor y exige que sea una de las opciones; None si no se envió."""
+    valor = request.args.get(nombre)
+    if valor is None:
+        return None
+    validar_opcion(valor, opciones, nombre)
+    return valor
+
+
+def filtro_entero(nombre):
+    """Lee ?nombre=123 como entero; None si no se envió."""
+    valor = request.args.get(nombre)
+    if valor is None:
+        return None
+    try:
+        return int(valor)
+    except ValueError:
+        raise ErrorAPI(f"El filtro '{nombre}' debe ser un número entero.", 400)
+
+
+def filtro_booleano(nombre):
+    """Lee ?nombre=true|false (o 1|0); None si no se envió."""
+    valor = request.args.get(nombre)
+    if valor is None:
+        return None
+    if valor.lower() in ("true", "1"):
+        return True
+    if valor.lower() in ("false", "0"):
+        return False
+    raise ErrorAPI(f"El filtro '{nombre}' debe ser true o false.", 400)
+
+
 def paginar(consulta, serializar):
     """Pagina una consulta select() y devuelve {'data': [...], 'meta': {...}}."""
     pagina = max(request.args.get("page", 1, type=int), 1)
