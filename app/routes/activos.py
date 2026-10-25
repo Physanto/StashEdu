@@ -19,8 +19,13 @@ REQUERIDOS = ("codigo_inventario", "nombre", "categoria")
 EDITABLES = REQUERIDOS + ("marca", "modelo", "numero_serie", "estado")
 
 
-def _obtener_o_404(activo_id):
-    activo = db.session.scalar(db.select(Activo).where(Activo.id == activo_id).with_for_update().execution_options(populate_existing=True))
+def _obtener_o_404(activo_id, bloquear=False):
+    # Las rutas que modifican bloquean la fila (FOR UPDATE) para no pisar un
+    # préstamo o una devolución que ocurra al mismo tiempo.
+    consulta = db.select(Activo).where(Activo.id == activo_id)
+    if bloquear:
+        consulta = consulta.with_for_update()
+    activo = db.session.scalar(consulta)
     if activo is None:
         raise ErrorAPI("Activo no encontrado.", 404)
     return activo
@@ -89,7 +94,7 @@ def obtener_activo(activo_id):
 
 @activos_bp.route("/<int:activo_id>", methods=["PUT", "PATCH"])
 def actualizar_activo(activo_id):
-    activo = _obtener_o_404(activo_id)
+    activo = _obtener_o_404(activo_id, bloquear=True)
     datos = obtener_json()
     if request.method == "PUT":
         validar_requeridos(datos, REQUERIDOS)
@@ -97,7 +102,9 @@ def actualizar_activo(activo_id):
     _validar_unicos(datos, excluir_id=activo.id)
 
     if activo.estado == "prestado" and "estado" in datos:
-        raise ErrorAPI("Un activo prestado solo cambia de estado mediante una devolución.", 409)
+        raise ErrorAPI(
+            "Un activo prestado solo cambia de estado mediante una devolución.", 409
+        )
 
     for campo in EDITABLES:
         if campo in datos:
@@ -109,7 +116,7 @@ def actualizar_activo(activo_id):
 @activos_bp.delete("/<int:activo_id>")
 def dar_de_baja_activo(activo_id):
     """Baja lógica: el activo queda con estado 'baja'."""
-    activo = _obtener_o_404(activo_id)
+    activo = _obtener_o_404(activo_id, bloquear=True)
     if activo.estado == "prestado":
         raise ErrorAPI("No se puede dar de baja un activo prestado.", 409)
     activo.estado = "baja"

@@ -19,8 +19,13 @@ REQUERIDOS = ("nombre_completo", "documento", "email", "tipo_usuario_id")
 EDITABLES = REQUERIDOS + ("telefono", "habilitado")
 
 
-def _obtener_o_404(usuario_id):
-    usuario = db.session.scalar(db.select(Usuario).where(Usuario.id == usuario_id).with_for_update().execution_options(populate_existing=True))
+def _obtener_o_404(usuario_id, bloquear=False):
+    # Las rutas que modifican bloquean la fila (FOR UPDATE) para no pisar un
+    # préstamo o una devolución que ocurra al mismo tiempo.
+    consulta = db.select(Usuario).where(Usuario.id == usuario_id)
+    if bloquear:
+        consulta = consulta.with_for_update()
+    usuario = db.session.scalar(consulta)
     if usuario is None:
         raise ErrorAPI("Usuario no encontrado.", 404)
     return usuario
@@ -67,7 +72,12 @@ def _validar_unicos(datos, excluir_id=None):
 
 
 def _validar_desactivacion(usuario):
-    pendiente = db.session.scalar(db.select(Prestamo.id).where(Prestamo.usuario_id == usuario.id, Prestamo.fecha_devolucion.is_(None)).limit(1).with_for_update())
+    pendiente = db.session.scalar(
+        db.select(Prestamo.id)
+        .where(Prestamo.usuario_id == usuario.id, Prestamo.fecha_devolucion.is_(None))
+        .limit(1)
+        .with_for_update()
+    )
     if pendiente:
         raise ErrorAPI("El usuario tiene préstamos pendientes de devolución.", 409)
 
@@ -104,13 +114,13 @@ def obtener_usuario(usuario_id):
 
 @usuarios_bp.route("/<int:usuario_id>", methods=["PUT", "PATCH"])
 def actualizar_usuario(usuario_id):
-    usuario = _obtener_o_404(usuario_id)
+    usuario = _obtener_o_404(usuario_id, bloquear=True)
     datos = obtener_json()
     if request.method == "PUT":
         validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
     _validar_unicos(datos, excluir_id=usuario.id)
-    if datos.get("activo") is False:
+    if datos.get("habilitado") is False:
         _validar_desactivacion(usuario)
 
     for campo in EDITABLES:
@@ -123,7 +133,7 @@ def actualizar_usuario(usuario_id):
 @usuarios_bp.delete("/<int:usuario_id>")
 def deshabilitar_usuario(usuario_id):
     """Baja lógica: conserva el registro para no romper el historial de préstamos."""
-    usuario = _obtener_o_404(usuario_id)
+    usuario = _obtener_o_404(usuario_id, bloquear=True)
     _validar_desactivacion(usuario)
     usuario.habilitado = False
     db.session.commit()
