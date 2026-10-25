@@ -6,7 +6,7 @@ from app.errors import ErrorAPI
 from app.extensions import db
 from app.models import Activo, Prestamo, Usuario
 from app.models.mixins import _ahora
-from app.models.prestamo import ESTADOS_PRESTAMO
+from app.models.prestamo import FILTROS_ESTADO
 from app.utils import (
     filtro_entero,
     filtro_fecha,
@@ -53,7 +53,7 @@ def consultar_prestamos(usuario_id=None, activo_id=None):
     if activo_id is not None:
         consulta = consulta.where(Prestamo.activo_id == activo_id)
 
-    estado = filtro_opcion("estado", ESTADOS_PRESTAMO)
+    estado = filtro_opcion("estado", FILTROS_ESTADO)
     if estado is not None:
         consulta = consulta.where(Prestamo.condicion_estado(estado, _ahora()))
 

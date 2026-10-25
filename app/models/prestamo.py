@@ -5,6 +5,8 @@ from app.models.mixins import DATETIME_UTC, TimestampMixin, _ahora, fecha_iso
 
 # El estado NO se guarda: se deriva de las fechas (ver docs/esquema_bd.sql).
 ESTADOS_PRESTAMO = ("activo", "vencido", "devuelto", "devuelto_con_retraso")
+# "pendiente" solo existe como filtro: agrupa los no devueltos (activo + vencido).
+FILTROS_ESTADO = ESTADOS_PRESTAMO + ("pendiente",)
 
 
 class Prestamo(TimestampMixin, db.Model):
@@ -67,6 +69,7 @@ class Prestamo(TimestampMixin, db.Model):
             "vencido": db.and_(abierto, cls.fecha_vencimiento < ahora),
             "devuelto": cls.fecha_devolucion <= cls.fecha_vencimiento,
             "devuelto_con_retraso": cls.fecha_devolucion > cls.fecha_vencimiento,
+            "pendiente": abierto,
         }
         return condiciones[estado]
 

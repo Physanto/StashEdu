@@ -237,7 +237,8 @@ es `0` si el préstamo va o fue devuelto a tiempo.
 
 ### Filtros de consulta
 
-- `estado`: uno de los cuatro estados anteriores.
+- `estado`: uno de los cuatro estados anteriores, o `pendiente` para ver todos los préstamos
+  sin devolver (`activo` + `vencido`).
 - `usuario_id`, `activo_id`: solo en `GET /prestamos`.
 - `desde`, `hasta`: fechas `AAAA-MM-DD` (UTC) sobre la fecha del préstamo; `hasta` incluye
   todo ese día.
@@ -258,6 +259,9 @@ curl -X POST http://127.0.0.1:5000/api/v1/prestamos/1/devolucion \
 
 # Préstamos vencidos (quién tiene un activo y no lo ha devuelto a tiempo)
 curl "http://127.0.0.1:5000/api/v1/prestamos?estado=vencido"
+
+# Quién tiene ahora el activo 1 (préstamo sin devolver, esté vencido o no)
+curl "http://127.0.0.1:5000/api/v1/activos/1/prestamos?estado=pendiente"
 
 # Historial del activo 1 en octubre
 curl "http://127.0.0.1:5000/api/v1/activos/1/prestamos?desde=2026-10-01&hasta=2026-10-31"

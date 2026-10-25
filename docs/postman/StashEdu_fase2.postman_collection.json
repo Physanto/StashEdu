@@ -853,6 +853,42 @@
           }
         },
         {
+          "name": "Quién tiene el activo (pendiente)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Incluye el préstamo creado\", function () { var ids = pm.response.json().data.map(function (p) { return p.id; }); pm.expect(ids).to.include(Number(pm.collectionVariables.get(\"prestamo_id\"))); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/activos/{{activo_id}}/prestamos?estado=pendiente",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "activos",
+                "{{activo_id}}",
+                "prestamos"
+              ],
+              "query": [
+                {
+                  "key": "estado",
+                  "value": "pendiente"
+                }
+              ]
+            }
+          }
+        },
+        {
           "name": "Estado inválido → 400",
           "event": [
             {
@@ -1079,6 +1115,42 @@
               "path": [
                 "activos",
                 "{{activo_id}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "El activo ya no tiene préstamo pendiente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"Sin préstamos pendientes\", function () { pm.expect(pm.response.json().data).to.be.empty; });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/activos/{{activo_id}}/prestamos?estado=pendiente",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "activos",
+                "{{activo_id}}",
+                "prestamos"
+              ],
+              "query": [
+                {
+                  "key": "estado",
+                  "value": "pendiente"
+                }
               ]
             }
           }

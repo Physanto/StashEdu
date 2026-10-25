@@ -44,6 +44,7 @@ class QueryTests(APITestCase):
         self.assertEqual(self.ids("/api/v1/prestamos?estado=vencido"), [2])
         self.assertEqual(self.ids("/api/v1/prestamos?estado=devuelto"), [3])
         self.assertEqual(self.ids("/api/v1/prestamos?estado=devuelto_con_retraso"), [4])
+        self.assertEqual(self.ids("/api/v1/prestamos?estado=pendiente"), [1, 2])
         self.assertEqual(self.client.get("/api/v1/prestamos?estado=perdido").status_code, 400)
 
     def test_filter_by_user_asset_and_dates(self):
@@ -62,5 +63,8 @@ class QueryTests(APITestCase):
         self.assertEqual(self.ids("/api/v1/usuarios/2/prestamos"), [4, 3])
         self.assertEqual(self.ids("/api/v1/usuarios/1/prestamos?estado=vencido"), [2])
         self.assertEqual(self.ids("/api/v1/activos/1/prestamos"), [1])
+        # Quién tiene ahora el activo 2, aunque su préstamo ya esté vencido.
+        self.assertEqual(self.ids("/api/v1/activos/2/prestamos?estado=pendiente"), [2])
+        self.assertEqual(self.ids("/api/v1/activos/3/prestamos?estado=pendiente"), [])
         self.assertEqual(self.client.get("/api/v1/usuarios/99/prestamos").status_code, 404)
         self.assertEqual(self.client.get("/api/v1/activos/99/prestamos").status_code, 404)
