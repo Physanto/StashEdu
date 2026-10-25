@@ -61,6 +61,7 @@ def registrar_errores(app):
 
     @app.errorhandler(ErrorAPI)
     def manejar_error_api(error):
+        db.session.rollback()
         cuerpo = {"error": error.mensaje}
         if error.detalles:
             cuerpo["detalles"] = error.detalles

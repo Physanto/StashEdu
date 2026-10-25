@@ -14,12 +14,13 @@ def create_app(config_class=Config):
     migrate.init_app(app, db)
 
     from app import models  # noqa: F401  (registra los modelos para las migraciones)
-    from app.routes import activos_bp, catalogos_bp, health_bp, usuarios_bp
+    from app.routes import activos_bp, catalogos_bp, health_bp, prestamos_bp, usuarios_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(catalogos_bp)
     app.register_blueprint(usuarios_bp)
     app.register_blueprint(activos_bp)
+    app.register_blueprint(prestamos_bp)
     registrar_errores(app)
 
     return app
