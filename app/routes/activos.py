@@ -4,6 +4,7 @@ from app.errors import ErrorAPI
 from app.extensions import db
 from app.models import Activo
 from app.models.activo import CATEGORIAS, ESTADOS, ESTADOS_EDITABLES
+from app.routes.prestamos import consultar_prestamos
 from app.utils import (
     filtro_opcion,
     obtener_json,
@@ -90,6 +91,13 @@ def listar_activos():
 @activos_bp.get("/<int:activo_id>")
 def obtener_activo(activo_id):
     return jsonify(_obtener_o_404(activo_id).to_dict())
+
+
+@activos_bp.get("/<int:activo_id>/prestamos")
+def historial_prestamos(activo_id):
+    """Historial de préstamos del activo; admite ?estado=&desde=&hasta=."""
+    _obtener_o_404(activo_id)
+    return jsonify(consultar_prestamos(activo_id=activo_id))
 
 
 @activos_bp.route("/<int:activo_id>", methods=["PUT", "PATCH"])

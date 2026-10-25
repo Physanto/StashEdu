@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 from flask import Blueprint, jsonify, request
 
@@ -6,7 +6,16 @@ from app.errors import ErrorAPI
 from app.extensions import db
 from app.models import Activo, Prestamo, Usuario
 from app.models.mixins import _ahora
-from app.utils import obtener_json, paginar, validar_requeridos, validar_textos
+from app.models.prestamo import ESTADOS_PRESTAMO
+from app.utils import (
+    filtro_entero,
+    filtro_fecha,
+    filtro_opcion,
+    obtener_json,
+    paginar,
+    validar_requeridos,
+    validar_textos,
+)
 
 prestamos_bp = Blueprint("prestamos", __name__, url_prefix="/api/v1/prestamos")
 
@@ -28,6 +37,38 @@ def _obtener_o_404(prestamo_id, bloquear=False):
     if prestamo is None:
         raise ErrorAPI("Préstamo no encontrado.", 404)
     return prestamo
+
+
+def consultar_prestamos(usuario_id=None, activo_id=None):
+    """Listado paginado, del más reciente al más antiguo.
+
+    Filtros de la URL: ?estado=&desde=&hasta= (fechas AAAA-MM-DD en UTC sobre
+    fecha_prestamo). También lo usan los historiales de usuarios y activos.
+    """
+    consulta = db.select(Prestamo).order_by(
+        Prestamo.fecha_prestamo.desc(), Prestamo.id.desc()
+    )
+    if usuario_id is not None:
+        consulta = consulta.where(Prestamo.usuario_id == usuario_id)
+    if activo_id is not None:
+        consulta = consulta.where(Prestamo.activo_id == activo_id)
+
+    estado = filtro_opcion("estado", ESTADOS_PRESTAMO)
+    if estado is not None:
+        consulta = consulta.where(Prestamo.condicion_estado(estado, _ahora()))
+
+    desde = filtro_fecha("desde")
+    hasta = filtro_fecha("hasta")
+    if desde and hasta and desde > hasta:
+        raise ErrorAPI("El filtro 'desde' no puede ser posterior a 'hasta'.", 400)
+    if desde is not None:
+        inicio = datetime.combine(desde, time.min)
+        consulta = consulta.where(Prestamo.fecha_prestamo >= inicio)
+    if hasta is not None:
+        # fecha_prestamo tiene hora: "hasta" incluye todo ese día.
+        fin = datetime.combine(hasta + timedelta(days=1), time.min)
+        consulta = consulta.where(Prestamo.fecha_prestamo < fin)
+    return paginar(consulta, Prestamo.to_dict)
 
 
 @prestamos_bp.post("")
@@ -101,8 +142,9 @@ def crear_prestamo():
 
 @prestamos_bp.get("")
 def listar_prestamos():
-    consulta = db.select(Prestamo).order_by(Prestamo.id)
-    return jsonify(paginar(consulta, Prestamo.to_dict))
+    return jsonify(
+        consultar_prestamos(filtro_entero("usuario_id"), filtro_entero("activo_id"))
+    )
 
 
 @prestamos_bp.get("/<int:prestamo_id>")

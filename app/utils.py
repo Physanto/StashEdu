@@ -1,4 +1,5 @@
 import re
+from datetime import date
 
 from flask import request
 
@@ -88,6 +89,17 @@ def filtro_booleano(nombre):
     if valor.lower() in ("false", "0"):
         return False
     raise ErrorAPI(f"El filtro '{nombre}' debe ser true o false.", 400)
+
+
+def filtro_fecha(nombre):
+    """Lee ?nombre=AAAA-MM-DD como fecha; None si no se envió."""
+    valor = request.args.get(nombre)
+    if valor is None:
+        return None
+    try:
+        return date.fromisoformat(valor)
+    except ValueError:
+        raise ErrorAPI(f"El filtro '{nombre}' debe ser una fecha AAAA-MM-DD.", 400)
 
 
 def paginar(consulta, serializar):

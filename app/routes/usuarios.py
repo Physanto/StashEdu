@@ -3,6 +3,7 @@ from flask import Blueprint, jsonify, request
 from app.errors import ErrorAPI
 from app.extensions import db
 from app.models import Prestamo, TipoUsuario, Usuario
+from app.routes.prestamos import consultar_prestamos
 from app.utils import (
     filtro_booleano,
     filtro_entero,
@@ -110,6 +111,13 @@ def listar_usuarios():
 @usuarios_bp.get("/<int:usuario_id>")
 def obtener_usuario(usuario_id):
     return jsonify(_obtener_o_404(usuario_id).to_dict())
+
+
+@usuarios_bp.get("/<int:usuario_id>/prestamos")
+def historial_prestamos(usuario_id):
+    """Historial de préstamos del usuario; admite ?estado=&desde=&hasta=."""
+    _obtener_o_404(usuario_id)
+    return jsonify(consultar_prestamos(usuario_id=usuario_id))
 
 
 @usuarios_bp.route("/<int:usuario_id>", methods=["PUT", "PATCH"])
