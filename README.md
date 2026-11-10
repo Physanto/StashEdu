@@ -3,9 +3,10 @@
 API REST para gestionar el préstamo de activos tecnológicos (portátiles, proyectores,
 tablets, cámaras…) de una institución educativa a estudiantes, docentes y funcionarios.
 
-> **Estado actual: Fase 2 — Préstamos.** Sobre la Fase 1 (Flask, conexión a MySQL/MariaDB,
-> modelos y CRUD de usuarios y activos) se agregan los préstamos: crear un préstamo,
-> registrar la devolución, reglas de negocio por tipo de usuario, consultas y filtros.
+> **Estado actual: Fase 3 — Seguridad.** Sobre la Fase 1 (Flask, conexión a MySQL/MariaDB,
+> modelos y CRUD de usuarios y activos) y la Fase 2 (préstamos, devoluciones, reglas de
+> negocio, consultas y filtros) se agregan registro/login, hash de contraseñas, JWT y
+> permisos por rol (`admin`, `operador`, `consulta`).
 
 ## Requisitos
 
@@ -58,6 +59,8 @@ Edita `.env` con tus datos:
 | `DB_PASSWORD` | `tu_contraseña` | Si tiene espacios o `#`, escríbela entre comillas: `"mi #clave"` |
 | `DB_NAME` | `prestamos_activos` | Nombre de la base de datos |
 | `FLASK_DEBUG` | `1` | `1` recarga el servidor al guardar cambios (solo en desarrollo) |
+| `SECRET_KEY` | *(64 caracteres hex)* | Firma de los JWT, mínimo 32 caracteres. Genérala con `python -c "import secrets; print(secrets.token_hex(32))"` |
+| `AUTH_TOKEN_MAX_AGE` | `3600` | Segundos que dura un token |
 
 El archivo `.env` contiene credenciales y **no se sube al repositorio**.
 
@@ -67,8 +70,8 @@ El archivo `.env` contiene credenciales y **no se sube al repositorio**.
 flask --app run db upgrade
 ```
 
-Crea las tablas `tipos_usuario`, `usuarios`, `activos` y `prestamos`, e inserta los tipos
-de usuario con sus límites de préstamo:
+Crea las tablas `tipos_usuario`, `roles`, `usuarios`, `activos` y `prestamos`, e inserta los
+tipos de usuario con sus límites de préstamo y los roles (ver [Fase 3](#probar-la-fase-3)):
 
 | id | Tipo | Máximo de préstamos sin devolver | Máximo de días por préstamo |
 |---|---|---|---|
@@ -76,9 +79,21 @@ de usuario con sus límites de préstamo:
 | 2 | `docente` | 3 | 15 |
 | 3 | `funcionario` | 2 | 7 |
 
-Si tu base ya tenía la Fase 1, el mismo comando solo agrega la tabla `prestamos`.
+Si tu base ya tenía una fase anterior, el mismo comando solo agrega lo que falta.
 
-### 5. Ejecutar la API
+### 5. Crear el primer administrador
+
+Todas las rutas (salvo `/health` y `/auth/login`) exigen un token, y las cuentas las crea un
+`admin`. El primero se crea desde la terminal:
+
+```bash
+flask --app run crear-admin
+```
+
+Pide nombre, documento, email y contraseña (12 a 128 caracteres). Con
+`flask --app run set-password <usuario_id>` se cambia la contraseña de una cuenta existente.
+
+### 6. Ejecutar la API
 
 ```bash
 python run.py
@@ -89,6 +104,9 @@ La API queda disponible en `http://127.0.0.1:5000/api/v1`.
 ## Probar la Fase 1
 
 ### Comprobación rápida
+
+> Desde la Fase 3, cada petición lleva el header `Authorization: Bearer <token>` (ver
+> [Fase 3](#probar-la-fase-3)). En los ejemplos con curl, guarda antes el token en `$TOKEN`.
 
 ```bash
 curl http://127.0.0.1:5000/api/v1/health
@@ -138,24 +156,24 @@ Los listados admiten paginación con `?page=1&per_page=10` (máximo 100 por pág
 ```bash
 # Crear un usuario (tipo 2 = docente)
 curl -X POST http://127.0.0.1:5000/api/v1/usuarios \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"nombre_completo": "Ana Pérez", "documento": "1001", "email": "ana@uni.edu.co", "tipo_usuario_id": 2}'
 
 # Crear un activo
 curl -X POST http://127.0.0.1:5000/api/v1/activos \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"codigo_inventario": "INV-001", "nombre": "Portátil Lenovo T14", "categoria": "portatil", "numero_serie": "SN-A1"}'
 
 # Listar los portátiles disponibles
-curl "http://127.0.0.1:5000/api/v1/activos?estado=disponible&categoria=portatil"
+curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:5000/api/v1/activos?estado=disponible&categoria=portatil"
 
 # Pasar el activo 1 a mantenimiento
 curl -X PATCH http://127.0.0.1:5000/api/v1/activos/1 \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"estado": "mantenimiento"}'
 
 # Deshabilitar el usuario 1
-curl -X DELETE http://127.0.0.1:5000/api/v1/usuarios/1
+curl -X DELETE http://127.0.0.1:5000/api/v1/usuarios/1 -H "Authorization: Bearer $TOKEN"
 ```
 
 ### Con Postman
@@ -164,6 +182,7 @@ curl -X DELETE http://127.0.0.1:5000/api/v1/usuarios/1
 2. Usa URLs como `{{base_url}}/usuarios`.
 3. En `POST`, `PUT` y `PATCH`, elige **Body → raw → JSON**; Postman añade el encabezado
    `Content-Type: application/json`.
+4. En la pestaña **Authorization** elige **Bearer Token** y pega el token del login.
 
 ### Casos de error para probar
 
@@ -249,22 +268,22 @@ es `0` si el préstamo va o fue devuelto a tiempo.
 ```bash
 # Prestar el activo 1 al usuario 1 durante 2 días
 curl -X POST http://127.0.0.1:5000/api/v1/prestamos \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"usuario_id": 1, "activo_id": 1, "dias": 2, "observaciones_entrega": "Con cargador"}'
 
 # Registrar la devolución del préstamo 1
 curl -X POST http://127.0.0.1:5000/api/v1/prestamos/1/devolucion \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"observaciones_devolucion": "Sin daños"}'
 
 # Préstamos vencidos (quién tiene un activo y no lo ha devuelto a tiempo)
-curl "http://127.0.0.1:5000/api/v1/prestamos?estado=vencido"
+curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:5000/api/v1/prestamos?estado=vencido"
 
 # Quién tiene ahora el activo 1 (préstamo sin devolver, esté vencido o no)
-curl "http://127.0.0.1:5000/api/v1/activos/1/prestamos?estado=pendiente"
+curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:5000/api/v1/activos/1/prestamos?estado=pendiente"
 
 # Historial del activo 1 en octubre
-curl "http://127.0.0.1:5000/api/v1/activos/1/prestamos?desde=2026-10-01&hasta=2026-10-31"
+curl -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:5000/api/v1/activos/1/prestamos?desde=2026-10-01&hasta=2026-10-31"
 ```
 
 ### Colección de Postman
@@ -273,7 +292,9 @@ curl "http://127.0.0.1:5000/api/v1/activos/1/prestamos?desde=2026-10-01&hasta=20
 recorre el flujo completo: crea sus propios usuarios y activos, presta, prueba los casos de
 error, consulta con filtros y registra la devolución. Impórtala en Postman (**Import**) y
 ejecútala en orden con **Run collection**; cada petición comprueba el código de respuesta.
-La variable `base_url` apunta a `http://127.0.0.1:5000/api/v1`.
+La variable `base_url` apunta a `http://127.0.0.1:5000/api/v1`. Desde la Fase 3 la primera
+petición inicia sesión: escribe el correo y la contraseña de un admin en las variables
+`admin_email` y `admin_password`.
 
 ### Casos de error para probar
 
@@ -300,6 +321,112 @@ python -m unittest discover -v
 
 Usan SQLite en memoria, así que no tocan la base de datos MySQL/MariaDB.
 
+## Probar la Fase 3
+
+### Endpoints de autenticación
+
+| Método | Ruta | Quién | Body | Éxito | Errores |
+|---|---|---|---|---|---|
+| POST | `/auth/login` | Público | `email`\*, `password`\* | 200 + token JWT | 400 · 401 credenciales inválidas |
+| POST | `/auth/register` | `admin` | `usuario_id`\*, `password`\*, `rol_id`\* | 201 + usuario | 400 · 401 · 403 · 404 usuario · 409 ya tiene cuenta o está deshabilitado |
+| GET | `/auth/me` | Cualquier cuenta | — | 200 + usuario | 401 |
+| GET | `/roles` | Cualquier cuenta | — | 200 + roles | 401 |
+
+- **Cuentas.** Un usuario que solo pide prestado no tiene cuenta (`rol_id` y `password_hash`
+  en `NULL`). `POST /auth/register` le da un rol y una contraseña a un usuario que **ya
+  existe**. Solo lo hace un `admin`; no hay autoregistro público.
+- **Contraseñas.** Se guardan con hash scrypt y salt aleatorio, nunca en texto plano. Deben
+  tener de 12 a 128 caracteres. La respuesta nunca incluye `password_hash`.
+- **Login.** Responde siempre `Credenciales inválidas.`, sin decir si el correo existe.
+
+Respuesta del login:
+
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIs...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "usuario": {"id": 3, "nombre_completo": "Admin Demo", "rol": "admin", "...": "..."}
+}
+```
+
+### El token (JWT)
+
+Es un JWT firmado con HS256 y `SECRET_KEY`. Se envía en cada petición con el header
+`Authorization: Bearer <token>`. Contiene:
+
+| Claim | Significado |
+|---|---|
+| `sub` | id del usuario |
+| `rol` | rol al iniciar sesión (informativo; los permisos se leen de la base de datos) |
+| `iat` / `exp` | emisión y vencimiento (`AUTH_TOKEN_MAX_AGE` segundos) |
+| `ver` | huella de la contraseña: si cambia, los tokens anteriores dejan de valer |
+
+Un token deja de servir si expira, si se altera la firma, si la cuenta se deshabilita o si
+cambia la contraseña.
+
+### Roles y permisos
+
+| Rol | Puede |
+|---|---|
+| `admin` | Todo, incluido `DELETE` y registrar cuentas |
+| `operador` | Ver todo; crear/editar usuarios y activos; crear préstamos y registrar devoluciones |
+| `consulta` | Solo `GET` |
+
+Sin token: **401**. Con token pero sin permiso: **403**. `/health` y `/auth/login` son
+públicos. Un `operador` no puede editar la cuenta de otro operador ni de un admin.
+
+Cada préstamo guarda quién lo entregó (`entregado_por`) y quién recibió la devolución
+(`recibido_por`), tomados del token:
+
+```json
+"entregado_por": {"id": 4, "nombre_completo": "Operador Demo"},
+"recibido_por": null
+```
+
+### Ejemplos con curl
+
+```bash
+# Iniciar sesión y guardar el token
+TOKEN=$(curl -s -X POST http://127.0.0.1:5000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "admin@uni.edu.co", "password": "tu contraseña"}' \
+  | python -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+# Mi perfil
+curl http://127.0.0.1:5000/api/v1/auth/me -H "Authorization: Bearer $TOKEN"
+
+# Dar cuenta de operador (rol 2) al usuario 1
+curl -X POST http://127.0.0.1:5000/api/v1/auth/register \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"usuario_id": 1, "password": "Clave segura 123", "rol_id": 2}'
+```
+
+### Colección de Postman
+
+[`docs/postman/StashEdu_fase3.postman_collection.json`](docs/postman/StashEdu_fase3.postman_collection.json)
+prueba el login, el registro de cuentas y los permisos de cada rol. Antes de ejecutarla, crea el
+primer admin (paso 5) y escribe su correo y contraseña en las variables `admin_email` y
+`admin_password`. La colección crea sus propias personas, cuentas, activos y préstamos.
+
+### Casos de error para probar
+
+| Caso | Petición | Respuesta esperada |
+|---|---|---|
+| Sin token | `GET /usuarios` sin `Authorization` | 401 |
+| Token alterado o de otra clave | `Authorization: Bearer abc.def.ghi` | 401 |
+| Token expirado | Esperar `AUTH_TOKEN_MAX_AGE` segundos | 401 |
+| Cuenta deshabilitada o contraseña cambiada | Usar un token emitido antes | 401 |
+| Contraseña incorrecta o correo inexistente | `POST /auth/login` | 401 `Credenciales inválidas.` |
+| Faltan campos | `POST /auth/login` con solo `email` | 400 |
+| Rol `consulta` modifica algo | `POST /activos` | 403 |
+| Rol `operador` borra algo | `DELETE /activos/{id}` | 403 |
+| Rol no admin registra cuentas | `POST /auth/register` | 403 |
+| Usuario inexistente | `POST /auth/register` con `usuario_id: 9999` | 404 |
+| Rol inexistente o contraseña corta | `rol_id: 99` o `password: "corta"` | 400 |
+| Cuenta repetida | Registrar dos veces el mismo usuario | 409 |
+| Falta `SECRET_KEY` en `.env` | Cualquier ruta protegida | 503 |
+
 ## Solución de problemas
 
 | Síntoma | Causa probable |
@@ -308,6 +435,8 @@ Usan SQLite en memoria, así que no tocan la base de datos MySQL/MariaDB.
 | `Access denied for user` | Usuario, contraseña o host incorrectos en `.env` |
 | `Unknown database 'prestamos_activos'` | Falta el paso 2 |
 | `Table ... doesn't exist` | Falta `flask --app run db upgrade` (paso 4) |
+| Todo responde 401 | Falta el header `Authorization: Bearer <token>` o el token expiró: vuelve a iniciar sesión |
+| Toda ruta protegida responde 503 | Falta `SECRET_KEY` (32+ caracteres) en `.env` |
 | `Can't locate revision ...` | La base fue creada con migraciones antiguas: bórrala (`DROP DATABASE prestamos_activos;`) y repite los pasos 2 y 4 |
 
 ## Documentación

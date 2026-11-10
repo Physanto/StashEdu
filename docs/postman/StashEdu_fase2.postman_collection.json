@@ -2,13 +2,59 @@
   "info": {
     "_postman_id": "f86c271d-e421-4460-87be-e9fdf3c2b48e",
     "name": "StashEdu - Fase 2: Préstamos",
-    "description": "Flujo de la Fase 2: crear préstamo, reglas de negocio, consultas, filtros y devolución. Ejecutar en orden con Run collection; crea sus propios usuarios y activos.",
+    "description": "Flujo de la Fase 2: crear préstamo, reglas de negocio, consultas, filtros y devolución. Desde la Fase 3 las rutas exigen token: escribe el correo y la contraseña de un admin en las variables admin_email y admin_password (ver README). Ejecutar en orden con Run collection; crea sus propios usuarios y activos.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
       "name": "0. Preparación",
       "item": [
+        {
+          "name": "Iniciar sesión (admin) → 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Responde 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.collectionVariables.set(\"token\", pm.response.json().access_token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/auth/login",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{admin_email}}\",\n  \"password\": \"{{admin_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
         {
           "name": "Crear usuario estudiante",
           "event": [
@@ -1198,6 +1244,18 @@
       "value": "http://127.0.0.1:5000/api/v1"
     },
     {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "admin_password",
+      "value": ""
+    },
+    {
+      "key": "admin_email",
+      "value": "admin@uni.edu.co"
+    },
+    {
       "key": "estudiante_id",
       "value": ""
     },
@@ -1221,5 +1279,15 @@
       "key": "hoy",
       "value": ""
     }
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  }
 }
