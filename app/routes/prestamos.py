@@ -1,6 +1,8 @@
 from datetime import datetime, time, timedelta
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+
+from app.auth import autenticar, es_operador, exigir_propietario
 
 from app.errors import ErrorAPI
 from app.extensions import db
@@ -18,6 +20,7 @@ from app.utils import (
 )
 
 prestamos_bp = Blueprint("prestamos", __name__, url_prefix="/api/v1/prestamos")
+prestamos_bp.before_request(autenticar)
 
 LIMITE_OBSERVACIONES = 1000
 
@@ -76,6 +79,7 @@ def crear_prestamo():
     datos = obtener_json()
     validar_requeridos(datos, ("usuario_id", "activo_id"))
     usuario_id = _entero_positivo(datos["usuario_id"], "usuario_id")
+    exigir_propietario(usuario_id)
     activo_id = _entero_positivo(datos["activo_id"], "activo_id")
     if datos.get("dias") is not None:
         _entero_positivo(datos["dias"], "dias")
@@ -142,14 +146,18 @@ def crear_prestamo():
 
 @prestamos_bp.get("")
 def listar_prestamos():
-    return jsonify(
-        consultar_prestamos(filtro_entero("usuario_id"), filtro_entero("activo_id"))
-    )
+    usuario_id = filtro_entero("usuario_id")
+    if not es_operador():
+        # Una cuenta ordinaria solo ve sus propios préstamos.
+        usuario_id = g.usuario.id
+    return jsonify(consultar_prestamos(usuario_id, filtro_entero("activo_id")))
 
 
 @prestamos_bp.get("/<int:prestamo_id>")
 def obtener_prestamo(prestamo_id):
-    return jsonify(_obtener_o_404(prestamo_id).to_dict())
+    prestamo = _obtener_o_404(prestamo_id)
+    exigir_propietario(prestamo.usuario_id)
+    return jsonify(prestamo.to_dict())
 
 
 @prestamos_bp.post("/<int:prestamo_id>/devolucion")
@@ -159,6 +167,7 @@ def registrar_devolucion(prestamo_id):
     validar_textos(datos, {"observaciones_devolucion": LIMITE_OBSERVACIONES}, ())
 
     prestamo = _obtener_o_404(prestamo_id, bloquear=True)
+    exigir_propietario(prestamo.usuario_id)
     if prestamo.fecha_devolucion is not None:
         raise ErrorAPI("El préstamo ya fue devuelto.", 409)
 

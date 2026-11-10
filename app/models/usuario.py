@@ -24,8 +24,20 @@ class Usuario(TimestampMixin, db.Model):
     habilitado = db.Column(
         db.Boolean, nullable=False, default=True, server_default=db.true()
     )
+    # Nullable permite migrar usuarios históricos sin inventar contraseñas.
+    password_hash = db.Column(db.String(255))
 
     tipo_usuario = db.relationship("TipoUsuario", lazy="joined")
+
+    def set_password(self, password):
+        from app.security import hash_password
+
+        self.password_hash = hash_password(password)
+
+    def check_password(self, password):
+        from app.security import verificar_password
+
+        return verificar_password(self.password_hash, password)
 
     def to_dict(self):
         return {

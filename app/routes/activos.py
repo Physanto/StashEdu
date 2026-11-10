@@ -1,4 +1,6 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+
+from app.auth import autenticar, es_operador, exigir_operador
 
 from app.errors import ErrorAPI
 from app.extensions import db
@@ -15,6 +17,14 @@ from app.utils import (
 )
 
 activos_bp = Blueprint("activos", __name__, url_prefix="/api/v1/activos")
+
+
+@activos_bp.before_request
+def proteger_activos():
+    autenticar()
+    if request.method not in ("GET", "HEAD", "OPTIONS"):
+        exigir_operador()
+
 
 REQUERIDOS = ("codigo_inventario", "nombre", "categoria")
 EDITABLES = REQUERIDOS + ("marca", "modelo", "numero_serie", "estado")
@@ -97,7 +107,9 @@ def obtener_activo(activo_id):
 def historial_prestamos(activo_id):
     """Historial de préstamos del activo; admite ?estado=&desde=&hasta=."""
     _obtener_o_404(activo_id)
-    return jsonify(consultar_prestamos(activo_id=activo_id))
+    # Una cuenta ordinaria solo ve sus propios préstamos de ese activo.
+    usuario_id = None if es_operador() else g.usuario.id
+    return jsonify(consultar_prestamos(usuario_id=usuario_id, activo_id=activo_id))
 
 
 @activos_bp.route("/<int:activo_id>", methods=["PUT", "PATCH"])

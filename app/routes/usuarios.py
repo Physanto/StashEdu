@@ -1,4 +1,6 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+
+from app.auth import autenticar, es_operador, exigir_operador, exigir_propietario
 
 from app.errors import ErrorAPI
 from app.extensions import db
@@ -15,9 +17,13 @@ from app.utils import (
 )
 
 usuarios_bp = Blueprint("usuarios", __name__, url_prefix="/api/v1/usuarios")
+usuarios_bp.before_request(autenticar)
 
 REQUERIDOS = ("nombre_completo", "documento", "email", "tipo_usuario_id")
 EDITABLES = REQUERIDOS + ("telefono", "habilitado")
+# Solo un operador los cambia: un usuario no puede cambiar su propio tipo ni
+# reactivarse.
+CAMPOS_DE_OPERADOR = ("tipo_usuario_id", "habilitado")
 
 
 def _obtener_o_404(usuario_id, bloquear=False):
@@ -85,6 +91,7 @@ def _validar_desactivacion(usuario):
 
 @usuarios_bp.post("")
 def crear_usuario():
+    exigir_operador()
     datos = obtener_json()
     validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
@@ -99,6 +106,8 @@ def crear_usuario():
 @usuarios_bp.get("")
 def listar_usuarios():
     consulta = db.select(Usuario).order_by(Usuario.id)
+    if not es_operador():
+        consulta = consulta.where(Usuario.id == g.usuario.id)
     tipo_usuario_id = filtro_entero("tipo_usuario_id")
     if tipo_usuario_id is not None:
         consulta = consulta.where(Usuario.tipo_usuario_id == tipo_usuario_id)
@@ -110,20 +119,25 @@ def listar_usuarios():
 
 @usuarios_bp.get("/<int:usuario_id>")
 def obtener_usuario(usuario_id):
+    exigir_propietario(usuario_id)
     return jsonify(_obtener_o_404(usuario_id).to_dict())
 
 
 @usuarios_bp.get("/<int:usuario_id>/prestamos")
 def historial_prestamos(usuario_id):
     """Historial de préstamos del usuario; admite ?estado=&desde=&hasta=."""
+    exigir_propietario(usuario_id)
     _obtener_o_404(usuario_id)
     return jsonify(consultar_prestamos(usuario_id=usuario_id))
 
 
 @usuarios_bp.route("/<int:usuario_id>", methods=["PUT", "PATCH"])
 def actualizar_usuario(usuario_id):
+    exigir_propietario(usuario_id)
     usuario = _obtener_o_404(usuario_id, bloquear=True)
     datos = obtener_json()
+    if not es_operador() and set(datos) & set(CAMPOS_DE_OPERADOR):
+        exigir_operador()
     if request.method == "PUT":
         validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
@@ -141,6 +155,7 @@ def actualizar_usuario(usuario_id):
 @usuarios_bp.delete("/<int:usuario_id>")
 def deshabilitar_usuario(usuario_id):
     """Baja lógica: conserva el registro para no romper el historial de préstamos."""
+    exigir_propietario(usuario_id)
     usuario = _obtener_o_404(usuario_id, bloquear=True)
     _validar_desactivacion(usuario)
     usuario.habilitado = False

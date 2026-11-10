@@ -3,9 +3,11 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from app import create_app
+from app.auth import emitir_token
 from app.extensions import db
 from app.models import Activo, Prestamo, TipoUsuario, Usuario
 from app.models.mixins import _ahora
+from app.security import hash_password
 
 
 class TestConfig:
@@ -13,6 +15,9 @@ class TestConfig:
     SQLALCHEMY_DATABASE_URI = "sqlite://"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {}
+    SECRET_KEY = "test-only-secret-key-with-at-least-32-characters"
+    AUTH_TOKEN_MAX_AGE = 3600
+    API_OPERATOR_IDS = (1,)
 
 
 class APITestCase(unittest.TestCase):
@@ -31,6 +36,12 @@ class APITestCase(unittest.TestCase):
             Activo(codigo_inventario="A1", nombre="Portátil", categoria="portatil"),
         ])
         db.session.commit()
+        # Ana (id 1) es la cuenta operadora con la que se autentican las pruebas.
+        if not hasattr(APITestCase, "fixture_hash"):
+            APITestCase.fixture_hash = hash_password("Test password seguro")
+        db.session.get(Usuario, 1).password_hash = APITestCase.fixture_hash
+        db.session.commit()
+        self.client.environ_base["HTTP_AUTHORIZATION"] = "Bearer " + emitir_token(db.session.get(Usuario, 1))
 
     def tearDown(self):
         db.session.remove()
@@ -116,9 +127,10 @@ class LoanTests(APITestCase):
             db.session.commit()
             self.assertEqual(self.loan().status_code, 409)
         db.session.get(Activo, 1).estado = "disponible"
-        db.session.get(Usuario, 1).habilitado = False
+        # Se usa otro usuario: deshabilitar a Ana invalidaría el token de la prueba.
+        db.session.add(Usuario(nombre_completo="Inactivo", documento="003", email="off@example.com", tipo_usuario_id=1, habilitado=False))
         db.session.commit()
-        self.assertEqual(self.loan().status_code, 409)
+        self.assertEqual(self.loan(usuario_id=2).status_code, 409)
 
     def test_failed_insert_rolls_back_reservation(self):
         with patch.object(db.session, "commit", side_effect=RuntimeError("simulated commit failure")):

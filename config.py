@@ -11,6 +11,10 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 class Config:
     """Configuración base de la aplicación."""
 
+    SECRET_KEY = os.getenv("SECRET_KEY")
+    AUTH_TOKEN_MAX_AGE = int(os.getenv("AUTH_TOKEN_MAX_AGE", "3600"))
+    API_OPERATOR_IDS = tuple(int(value.strip()) for value in os.getenv("API_OPERATOR_IDS", "").split(",") if value.strip())
+
     SQLALCHEMY_DATABASE_URI = URL.create(
         "mysql+pymysql",
         username=os.getenv("DB_USER", ""),
