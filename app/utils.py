@@ -26,6 +26,13 @@ def validar_requeridos(datos, campos):
         raise ErrorAPI("Faltan campos obligatorios.", 400, {"campos": faltantes})
 
 
+def entero_positivo(valor, campo):
+    # bool es subclase de int en Python: se descarta de forma explícita.
+    if isinstance(valor, bool) or not isinstance(valor, int) or valor < 1:
+        raise ErrorAPI(f"El campo '{campo}' debe ser un entero positivo.", 400)
+    return valor
+
+
 def validar_opcion(valor, opciones, campo):
     if valor not in opciones:
         raise ErrorAPI(

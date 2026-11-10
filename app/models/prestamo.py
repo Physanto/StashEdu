@@ -9,6 +9,12 @@ ESTADOS_PRESTAMO = ("activo", "vencido", "devuelto", "devuelto_con_retraso")
 FILTROS_ESTADO = ESTADOS_PRESTAMO + ("pendiente",)
 
 
+def _resumen_operador(usuario):
+    if usuario is None:
+        return None
+    return {"id": usuario.id, "nombre_completo": usuario.nombre_completo}
+
+
 class Prestamo(TimestampMixin, db.Model):
     """Un registro por préstamo. Solo guarda hechos (fechas); el estado se calcula."""
 
@@ -34,14 +40,34 @@ class Prestamo(TimestampMixin, db.Model):
         db.ForeignKey("activos.id", name="fk_prestamos_activo", ondelete="RESTRICT"),
         nullable=False,
     )
+    # Operadores que entregan y reciben el activo (los toma la API del token).
+    entregado_por = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "usuarios.id", name="fk_prestamos_entregado_por", ondelete="RESTRICT"
+        ),
+    )
+    recibido_por = db.Column(
+        db.Integer,
+        db.ForeignKey(
+            "usuarios.id", name="fk_prestamos_recibido_por", ondelete="RESTRICT"
+        ),
+    )
     fecha_prestamo = db.Column(DATETIME_UTC, nullable=False)
     fecha_vencimiento = db.Column(DATETIME_UTC, nullable=False)
     fecha_devolucion = db.Column(DATETIME_UTC)  # NULL = préstamo abierto
     observaciones_entrega = db.Column(db.Text)
     observaciones_devolucion = db.Column(db.Text)
 
-    usuario = db.relationship("Usuario", lazy="joined")
+    # Hay tres claves foráneas hacia usuarios: cada relación dice cuál usa.
+    usuario = db.relationship("Usuario", lazy="joined", foreign_keys=[usuario_id])
     activo = db.relationship("Activo", lazy="joined")
+    operador_entrega = db.relationship(
+        "Usuario", lazy="joined", foreign_keys=[entregado_por]
+    )
+    operador_recepcion = db.relationship(
+        "Usuario", lazy="joined", foreign_keys=[recibido_por]
+    )
 
     @property
     def estado(self):
@@ -92,6 +118,8 @@ class Prestamo(TimestampMixin, db.Model):
             "dias_retraso": self.dias_retraso,
             "observaciones_entrega": self.observaciones_entrega,
             "observaciones_devolucion": self.observaciones_devolucion,
+            "entregado_por": _resumen_operador(self.operador_entrega),
+            "recibido_por": _resumen_operador(self.operador_recepcion),
             "created_at": fecha_iso(self.created_at),
             "updated_at": fecha_iso(self.updated_at),
         }

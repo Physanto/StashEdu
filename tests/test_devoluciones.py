@@ -1,9 +1,8 @@
 from datetime import timedelta
 from unittest.mock import patch
 
-from app.auth import emitir_token
 from app.extensions import db
-from app.models import Activo, Prestamo, Usuario
+from app.models import Activo, Prestamo
 from app.models.mixins import _ahora
 from tests.test_prestamos import APITestCase
 
@@ -62,12 +61,6 @@ class ReturnTests(APITestCase):
     def test_logical_deletion_after_return_preserves_history(self):
         self.loan()
         self.client.post("/api/v1/prestamos/1/devolucion")
-        self.assertEqual(self.client.delete("/api/v1/activos/1").status_code, 204)
         self.assertEqual(self.client.delete("/api/v1/usuarios/1").status_code, 204)
-        # Ana quedó deshabilitada: se consulta con otra cuenta operadora.
-        operador = Usuario(nombre_completo="Operador", documento="002", email="op@example.com", tipo_usuario_id=2, password_hash=self.fixture_hash)
-        db.session.add(operador)
-        db.session.commit()
-        self.app.config["API_OPERATOR_IDS"] = (operador.id,)
-        self.client.environ_base["HTTP_AUTHORIZATION"] = "Bearer " + emitir_token(operador)
+        self.assertEqual(self.client.delete("/api/v1/activos/1").status_code, 204)
         self.assertEqual(self.client.get("/api/v1/prestamos/1").status_code, 200)

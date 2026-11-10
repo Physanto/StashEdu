@@ -3,12 +3,20 @@ from app.models.mixins import TINYINT_UNSIGNED, TimestampMixin, fecha_iso
 
 
 class Usuario(TimestampMixin, db.Model):
-    """Persona que pide prestado. (rol_id y password_hash llegan en la Fase 3)."""
+    """Toda persona registrada.
+
+    - Quien solo pide prestado: rol_id y password_hash son NULL.
+    - Quien opera el sistema: tiene rol_id y password_hash (login/JWT).
+    El CHECK chk_usuarios_cuenta obliga a que existan los dos juntos o ninguno.
+    """
 
     __tablename__ = "usuarios"
     __table_args__ = (
         db.UniqueConstraint("documento", name="uq_usuarios_documento"),
         db.UniqueConstraint("email", name="uq_usuarios_email"),
+        db.CheckConstraint(
+            "(password_hash IS NULL) = (rol_id IS NULL)", name="chk_usuarios_cuenta"
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -21,13 +29,22 @@ class Usuario(TimestampMixin, db.Model):
         db.ForeignKey("tipos_usuario.id", name="fk_usuarios_tipo", ondelete="RESTRICT"),
         nullable=False,
     )
+    rol_id = db.Column(
+        TINYINT_UNSIGNED,
+        db.ForeignKey("roles.id", name="fk_usuarios_rol", ondelete="RESTRICT"),
+    )
+    # Solo el hash (scrypt con salt). NUNCA se incluye en to_dict().
+    password_hash = db.Column(db.String(255))
     habilitado = db.Column(
         db.Boolean, nullable=False, default=True, server_default=db.true()
     )
-    # Nullable permite migrar usuarios históricos sin inventar contraseñas.
-    password_hash = db.Column(db.String(255))
 
     tipo_usuario = db.relationship("TipoUsuario", lazy="joined")
+    rol = db.relationship("Rol", lazy="joined")
+
+    @property
+    def tiene_cuenta(self):
+        return self.rol_id is not None and self.password_hash is not None
 
     def set_password(self, password):
         from app.security import hash_password
@@ -48,6 +65,8 @@ class Usuario(TimestampMixin, db.Model):
             "telefono": self.telefono,
             "tipo_usuario_id": self.tipo_usuario_id,
             "tipo_usuario": self.tipo_usuario.codigo,
+            "rol_id": self.rol_id,
+            "rol": self.rol.codigo if self.rol else None,
             "habilitado": self.habilitado,
             "created_at": fecha_iso(self.created_at),
             "updated_at": fecha_iso(self.updated_at),

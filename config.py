@@ -11,9 +11,10 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 class Config:
     """Configuración base de la aplicación."""
 
+    # Firma de los JWT (HS256). Mínimo 32 caracteres; nunca se sube al repositorio.
     SECRET_KEY = os.getenv("SECRET_KEY")
+    # Segundos de validez de un token (claim "exp").
     AUTH_TOKEN_MAX_AGE = int(os.getenv("AUTH_TOKEN_MAX_AGE", "3600"))
-    API_OPERATOR_IDS = tuple(int(value.strip()) for value in os.getenv("API_OPERATOR_IDS", "").split(",") if value.strip())
 
     SQLALCHEMY_DATABASE_URI = URL.create(
         "mysql+pymysql",

@@ -2,14 +2,14 @@ from datetime import datetime, time, timedelta
 
 from flask import Blueprint, g, jsonify, request
 
-from app.auth import autenticar, es_operador, exigir_propietario
-
+from app.auth import autorizar_por_metodo
 from app.errors import ErrorAPI
 from app.extensions import db
 from app.models import Activo, Prestamo, Usuario
 from app.models.mixins import _ahora
 from app.models.prestamo import FILTROS_ESTADO
 from app.utils import (
+    entero_positivo,
     filtro_entero,
     filtro_fecha,
     filtro_opcion,
@@ -20,16 +20,10 @@ from app.utils import (
 )
 
 prestamos_bp = Blueprint("prestamos", __name__, url_prefix="/api/v1/prestamos")
-prestamos_bp.before_request(autenticar)
+# GET: cualquier rol · POST (crear y devolver): admin y operador.
+prestamos_bp.before_request(autorizar_por_metodo)
 
 LIMITE_OBSERVACIONES = 1000
-
-
-def _entero_positivo(valor, campo):
-    # bool es subclase de int en Python: se descarta de forma explícita.
-    if isinstance(valor, bool) or not isinstance(valor, int) or valor < 1:
-        raise ErrorAPI(f"El campo '{campo}' debe ser un entero positivo.", 400)
-    return valor
 
 
 def _obtener_o_404(prestamo_id, bloquear=False):
@@ -78,11 +72,10 @@ def consultar_prestamos(usuario_id=None, activo_id=None):
 def crear_prestamo():
     datos = obtener_json()
     validar_requeridos(datos, ("usuario_id", "activo_id"))
-    usuario_id = _entero_positivo(datos["usuario_id"], "usuario_id")
-    exigir_propietario(usuario_id)
-    activo_id = _entero_positivo(datos["activo_id"], "activo_id")
+    usuario_id = entero_positivo(datos["usuario_id"], "usuario_id")
+    activo_id = entero_positivo(datos["activo_id"], "activo_id")
     if datos.get("dias") is not None:
-        _entero_positivo(datos["dias"], "dias")
+        entero_positivo(datos["dias"], "dias")
     validar_textos(datos, {"observaciones_entrega": LIMITE_OBSERVACIONES}, ())
 
     # FOR UPDATE bloquea la fila del usuario hasta el commit: dos préstamos
@@ -136,6 +129,7 @@ def crear_prestamo():
         fecha_prestamo=ahora,
         fecha_vencimiento=ahora + timedelta(days=dias),
         observaciones_entrega=datos.get("observaciones_entrega"),
+        entregado_por=g.usuario.id,  # el operador autenticado entrega el activo
     )
     db.session.add(prestamo)
     # Un solo commit: el préstamo y el cambio de estado del activo se guardan
@@ -146,18 +140,14 @@ def crear_prestamo():
 
 @prestamos_bp.get("")
 def listar_prestamos():
-    usuario_id = filtro_entero("usuario_id")
-    if not es_operador():
-        # Una cuenta ordinaria solo ve sus propios préstamos.
-        usuario_id = g.usuario.id
-    return jsonify(consultar_prestamos(usuario_id, filtro_entero("activo_id")))
+    return jsonify(
+        consultar_prestamos(filtro_entero("usuario_id"), filtro_entero("activo_id"))
+    )
 
 
 @prestamos_bp.get("/<int:prestamo_id>")
 def obtener_prestamo(prestamo_id):
-    prestamo = _obtener_o_404(prestamo_id)
-    exigir_propietario(prestamo.usuario_id)
-    return jsonify(prestamo.to_dict())
+    return jsonify(_obtener_o_404(prestamo_id).to_dict())
 
 
 @prestamos_bp.post("/<int:prestamo_id>/devolucion")
@@ -167,7 +157,6 @@ def registrar_devolucion(prestamo_id):
     validar_textos(datos, {"observaciones_devolucion": LIMITE_OBSERVACIONES}, ())
 
     prestamo = _obtener_o_404(prestamo_id, bloquear=True)
-    exigir_propietario(prestamo.usuario_id)
     if prestamo.fecha_devolucion is not None:
         raise ErrorAPI("El préstamo ya fue devuelto.", 409)
 
@@ -182,5 +171,6 @@ def registrar_devolucion(prestamo_id):
     # La fecha la pone el servidor: el cliente no puede "devolver a tiempo" a mano.
     prestamo.fecha_devolucion = _ahora()
     prestamo.observaciones_devolucion = datos.get("observaciones_devolucion")
+    prestamo.recibido_por = g.usuario.id  # el operador autenticado lo recibe
     db.session.commit()
     return jsonify(prestamo.to_dict())

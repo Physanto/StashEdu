@@ -16,7 +16,7 @@ def create_app(config_class=Config):
     migrate.init_app(app, db)
 
     from app import models  # noqa: F401  (registra los modelos para las migraciones)
-    from app.commands import set_password
+    from app.commands import crear_admin, set_password
     from app.routes import (
         activos_bp,
         auth_bp,
@@ -32,6 +32,7 @@ def create_app(config_class=Config):
     app.register_blueprint(activos_bp)
     app.register_blueprint(prestamos_bp)
     app.register_blueprint(auth_bp)
+    app.cli.add_command(crear_admin)
     app.cli.add_command(set_password)
     registrar_errores(app)
 
