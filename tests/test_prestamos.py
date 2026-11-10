@@ -5,9 +5,11 @@ from unittest.mock import patch
 from app import create_app
 from app.auth import emitir_token
 from app.extensions import db
-from app.models import Activo, Prestamo, TipoUsuario, Usuario
+from app.models import Activo, Prestamo, Rol, TipoUsuario, Usuario
 from app.models.mixins import _ahora
 from app.security import hash_password
+
+PASSWORD_PRUEBAS = "Clave de pruebas 123"
 
 
 class TestConfig:
@@ -17,7 +19,6 @@ class TestConfig:
     SQLALCHEMY_ENGINE_OPTIONS = {}
     SECRET_KEY = "test-only-secret-key-with-at-least-32-characters"
     AUTH_TOKEN_MAX_AGE = 3600
-    API_OPERATOR_IDS = (1,)
 
 
 class APITestCase(unittest.TestCase):
@@ -32,16 +33,18 @@ class APITestCase(unittest.TestCase):
             TipoUsuario(codigo="docente", descripcion="Docente", max_prestamos_activos=3, dias_max_prestamo=15),
         ])
         db.session.add_all([
+            Rol(codigo="admin", descripcion="Administrador"),
+            Rol(codigo="operador", descripcion="Operador"),
+            Rol(codigo="consulta", descripcion="Solo lectura"),
+        ])
+        db.session.add_all([
             Usuario(nombre_completo="Ana", documento="001", email="ana@example.com", tipo_usuario_id=2),
             Activo(codigo_inventario="A1", nombre="Portátil", categoria="portatil"),
         ])
         db.session.commit()
-        # Ana (id 1) es la cuenta operadora con la que se autentican las pruebas.
-        if not hasattr(APITestCase, "fixture_hash"):
-            APITestCase.fixture_hash = hash_password("Test password seguro")
-        db.session.get(Usuario, 1).password_hash = APITestCase.fixture_hash
-        db.session.commit()
-        self.client.environ_base["HTTP_AUTHORIZATION"] = "Bearer " + emitir_token(db.session.get(Usuario, 1))
+        # Cuenta admin (id 2) con la que se autentican las pruebas por defecto.
+        self.admin = self.add_account("Admin", "900", "admin@example.com", rol_id=1)
+        self.use_token(self.admin)
 
     def tearDown(self):
         db.session.remove()
@@ -52,6 +55,21 @@ class APITestCase(unittest.TestCase):
         body = {"usuario_id": 1, "activo_id": 1, "dias": 7}
         body.update(changes)
         return self.client.post("/api/v1/prestamos", json=body)
+
+    def add_account(self, nombre, documento, email, rol_id):
+        # scrypt es lento a propósito: el hash se calcula una sola vez.
+        if not hasattr(APITestCase, "fixture_hash"):
+            APITestCase.fixture_hash = hash_password(PASSWORD_PRUEBAS)
+        usuario = Usuario(
+            nombre_completo=nombre, documento=documento, email=email,
+            tipo_usuario_id=2, rol_id=rol_id, password_hash=APITestCase.fixture_hash,
+        )
+        db.session.add(usuario)
+        db.session.commit()
+        return usuario
+
+    def use_token(self, usuario):
+        self.client.environ_base["HTTP_AUTHORIZATION"] = "Bearer " + emitir_token(usuario)
 
     def add_asset(self, codigo):
         activo = Activo(codigo_inventario=codigo, nombre="Equipo", categoria="otro")
@@ -127,10 +145,9 @@ class LoanTests(APITestCase):
             db.session.commit()
             self.assertEqual(self.loan().status_code, 409)
         db.session.get(Activo, 1).estado = "disponible"
-        # Se usa otro usuario: deshabilitar a Ana invalidaría el token de la prueba.
-        db.session.add(Usuario(nombre_completo="Inactivo", documento="003", email="off@example.com", tipo_usuario_id=1, habilitado=False))
+        db.session.get(Usuario, 1).habilitado = False
         db.session.commit()
-        self.assertEqual(self.loan(usuario_id=2).status_code, 409)
+        self.assertEqual(self.loan().status_code, 409)
 
     def test_failed_insert_rolls_back_reservation(self):
         with patch.object(db.session, "commit", side_effect=RuntimeError("simulated commit failure")):
