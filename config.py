@@ -15,6 +15,8 @@ class Config:
     SECRET_KEY = os.getenv("SECRET_KEY")
     # Segundos de validez de un token (claim "exp").
     AUTH_TOKEN_MAX_AGE = int(os.getenv("AUTH_TOKEN_MAX_AGE", "3600"))
+    # Tamaño máximo del cuerpo de una petición (64 KB): más grande → 413.
+    MAX_CONTENT_LENGTH = 64 * 1024
 
     SQLALCHEMY_DATABASE_URI = URL.create(
         "mysql+pymysql",
@@ -30,4 +32,8 @@ class Config:
         "pool_pre_ping": True,
         "pool_recycle": 280,
         "connect_args": {"connect_timeout": 5},
+        # Cada consulta ve lo último confirmado y los SELECT ... FOR UPDATE esperan
+        # su turno. Con REPEATABLE READ, MariaDB ≥ 11.8 aborta la transacción
+        # (error 1020) cuando dos peticiones tocan la misma fila a la vez.
+        "isolation_level": "READ COMMITTED",
     }

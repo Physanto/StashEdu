@@ -7,11 +7,16 @@ from app.models import Prestamo, TipoUsuario, Usuario
 from app.models.rol import ROL_ADMIN
 from app.routes.prestamos import consultar_prestamos
 from app.utils import (
+    FILTROS_HISTORIAL,
+    PAGINACION,
+    acepta_parametros,
     filtro_booleano,
     filtro_entero,
+    normalizar_email,
     obtener_json,
     paginar,
     validar_email,
+    validar_parametros,
     validar_requeridos,
     validar_textos,
 )
@@ -19,6 +24,7 @@ from app.utils import (
 usuarios_bp = Blueprint("usuarios", __name__, url_prefix="/api/v1/usuarios")
 # GET: cualquier rol · POST/PUT/PATCH: admin y operador · DELETE: solo admin.
 usuarios_bp.before_request(autorizar_por_metodo)
+usuarios_bp.before_request(validar_parametros)
 
 REQUERIDOS = ("nombre_completo", "documento", "email", "tipo_usuario_id")
 EDITABLES = REQUERIDOS + ("telefono", "habilitado")
@@ -29,7 +35,9 @@ def _obtener_o_404(usuario_id, bloquear=False):
     # préstamo o una devolución que ocurra al mismo tiempo.
     consulta = db.select(Usuario).where(Usuario.id == usuario_id)
     if bloquear:
-        consulta = consulta.with_for_update()
+        consulta = consulta.with_for_update().execution_options(
+            populate_existing=True
+        )
     usuario = db.session.scalar(consulta)
     if usuario is None:
         raise ErrorAPI("Usuario no encontrado.", 404)
@@ -48,6 +56,7 @@ def _validar(datos):
         REQUERIDOS,
     )
     if "email" in datos:
+        normalizar_email(datos)
         validar_email(datos["email"])
     if "tipo_usuario_id" in datos:
         tipo_id = datos["tipo_usuario_id"]
@@ -89,7 +98,7 @@ def _validar_desactivacion(usuario):
 
 @usuarios_bp.post("")
 def crear_usuario():
-    datos = obtener_json()
+    datos = obtener_json(EDITABLES)
     validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
     _validar_unicos(datos)
@@ -101,6 +110,7 @@ def crear_usuario():
 
 
 @usuarios_bp.get("")
+@acepta_parametros(*PAGINACION, "tipo_usuario_id", "habilitado")
 def listar_usuarios():
     consulta = db.select(Usuario).order_by(Usuario.id)
     tipo_usuario_id = filtro_entero("tipo_usuario_id")
@@ -118,6 +128,7 @@ def obtener_usuario(usuario_id):
 
 
 @usuarios_bp.get("/<int:usuario_id>/prestamos")
+@acepta_parametros(*FILTROS_HISTORIAL)
 def historial_prestamos(usuario_id):
     """Historial de préstamos del usuario; admite ?estado=&desde=&hasta=."""
     _obtener_o_404(usuario_id)
@@ -130,7 +141,7 @@ def actualizar_usuario(usuario_id):
     if usuario.tiene_cuenta and usuario.id != g.usuario.id:
         # Un operador no puede editar ni deshabilitar la cuenta de otro operador o admin.
         exigir_rol(ROL_ADMIN)
-    datos = obtener_json()
+    datos = obtener_json(EDITABLES, no_vacio=request.method == "PATCH")
     if request.method == "PUT":
         validar_requeridos(datos, REQUERIDOS)
     _validar(datos)

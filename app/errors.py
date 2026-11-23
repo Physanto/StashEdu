@@ -16,10 +16,33 @@ class ErrorAPI(Exception):
 
 
 CODIGOS_CHECK = (3819, 4025)  # violación de CHECK: MySQL 3819, MariaDB 4025
+# Dos transacciones chocaron (fila cambiada, interbloqueo o espera agotada):
+# es un conflicto que el cliente puede reintentar, no una base de datos caída.
+CODIGOS_CONCURRENCIA = (1020, 1205, 1213)
+# SQLite (las pruebas) usa otros códigos para lo mismo: se traducen a los de MySQL.
+SQLITE_A_MYSQL = {2067: 1062, 1555: 1062, 275: 3819}
+
+# Mensajes de los errores que genera Flask/Werkzeug (ruta inexistente, método no
+# permitido, cuerpo demasiado grande...): en español y con el mismo formato JSON.
+MENSAJES_HTTP = {
+    400: "Petición inválida.",
+    401: "Se requiere autenticación.",
+    403: "No tienes permiso para realizar esta operación.",
+    404: "Recurso no encontrado.",
+    405: "Método no permitido para este recurso.",
+    413: "El cuerpo de la petición supera el tamaño máximo permitido.",
+    415: "El Content-Type debe ser application/json.",
+    429: "Demasiadas peticiones.",
+    500: "Error interno del servidor.",
+}
 
 
 def _codigo_mysql(error):
-    return getattr(error.orig, "args", (None,))[0]
+    orig = getattr(error, "orig", None)
+    sqlite = getattr(orig, "sqlite_errorcode", None)
+    if sqlite is not None:
+        return SQLITE_A_MYSQL.get(sqlite)
+    return getattr(orig, "args", (None,))[0]
 
 
 def _respuesta_restriccion(codigo):
@@ -56,6 +79,10 @@ def registrar_errores(app):
         if _codigo_mysql(error) in CODIGOS_CHECK:
             cuerpo, codigo_http = _respuesta_restriccion(_codigo_mysql(error))
             return jsonify(cuerpo), codigo_http
+        if _codigo_mysql(error) in CODIGOS_CONCURRENCIA:
+            app.logger.warning("Conflicto de concurrencia: %s", error.orig)
+            mensaje = "Otra operación modificó estos datos al mismo tiempo; intente de nuevo."
+            return jsonify({"error": mensaje}), 409
         app.logger.exception("Error operativo de la base de datos.")
         return jsonify({"error": "La base de datos no está disponible."}), 503
 
@@ -73,9 +100,13 @@ def registrar_errores(app):
 
     @app.errorhandler(HTTPException)
     def manejar_http(error):
+        # get_response conserva los headers propios del error (p. ej. Allow en el 405).
         respuesta = error.get_response()
-        respuesta.data = app.json.dumps({"error": error.description})
+        mensaje = MENSAJES_HTTP.get(error.code, "La petición no se pudo procesar.")
+        respuesta.data = app.json.dumps({"error": mensaje})
         respuesta.content_type = "application/json"
+        if error.code == 401:
+            respuesta.headers["WWW-Authenticate"] = "Bearer"
         return respuesta
 
     @app.errorhandler(Exception)

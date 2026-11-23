@@ -9,12 +9,15 @@ from app.models import Activo, Prestamo, Usuario
 from app.models.mixins import _ahora
 from app.models.prestamo import FILTROS_ESTADO
 from app.utils import (
+    FILTROS_HISTORIAL,
+    acepta_parametros,
     entero_positivo,
     filtro_entero,
     filtro_fecha,
     filtro_opcion,
     obtener_json,
     paginar,
+    validar_parametros,
     validar_requeridos,
     validar_textos,
 )
@@ -22,14 +25,18 @@ from app.utils import (
 prestamos_bp = Blueprint("prestamos", __name__, url_prefix="/api/v1/prestamos")
 # GET: cualquier rol · POST (crear y devolver): admin y operador.
 prestamos_bp.before_request(autorizar_por_metodo)
+prestamos_bp.before_request(validar_parametros)
 
 LIMITE_OBSERVACIONES = 1000
+CAMPOS_PRESTAMO = ("usuario_id", "activo_id", "dias", "observaciones_entrega")
 
 
 def _obtener_o_404(prestamo_id, bloquear=False):
     consulta = db.select(Prestamo).where(Prestamo.id == prestamo_id)
     if bloquear:
-        consulta = consulta.with_for_update()
+        consulta = consulta.with_for_update().execution_options(
+            populate_existing=True
+        )
     prestamo = db.session.scalar(consulta)
     if prestamo is None:
         raise ErrorAPI("Préstamo no encontrado.", 404)
@@ -70,7 +77,7 @@ def consultar_prestamos(usuario_id=None, activo_id=None):
 
 @prestamos_bp.post("")
 def crear_prestamo():
-    datos = obtener_json()
+    datos = obtener_json(CAMPOS_PRESTAMO)
     validar_requeridos(datos, ("usuario_id", "activo_id"))
     usuario_id = entero_positivo(datos["usuario_id"], "usuario_id")
     activo_id = entero_positivo(datos["activo_id"], "activo_id")
@@ -82,7 +89,10 @@ def crear_prestamo():
     # simultáneos del mismo usuario se atienden en orden y el conteo de
     # préstamos abiertos no queda desactualizado.
     usuario = db.session.scalar(
-        db.select(Usuario).where(Usuario.id == usuario_id).with_for_update()
+        db.select(Usuario)
+        .where(Usuario.id == usuario_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if usuario is None:
         raise ErrorAPI("Usuario no encontrado.", 404)
@@ -139,6 +149,7 @@ def crear_prestamo():
 
 
 @prestamos_bp.get("")
+@acepta_parametros(*FILTROS_HISTORIAL, "usuario_id", "activo_id")
 def listar_prestamos():
     return jsonify(
         consultar_prestamos(filtro_entero("usuario_id"), filtro_entero("activo_id"))
@@ -153,7 +164,7 @@ def obtener_prestamo(prestamo_id):
 @prestamos_bp.post("/<int:prestamo_id>/devolucion")
 def registrar_devolucion(prestamo_id):
     # El cuerpo es opcional: solo puede traer las observaciones de la devolución.
-    datos = obtener_json() if request.get_data() else {}
+    datos = obtener_json(("observaciones_devolucion",)) if request.get_data() else {}
     validar_textos(datos, {"observaciones_devolucion": LIMITE_OBSERVACIONES}, ())
 
     prestamo = _obtener_o_404(prestamo_id, bloquear=True)
