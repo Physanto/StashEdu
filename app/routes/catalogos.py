@@ -3,10 +3,12 @@ from flask import Blueprint, jsonify
 from app.auth import autorizar_por_metodo
 from app.extensions import db
 from app.models import Rol, TipoUsuario
+from app.utils import validar_parametros
 
 catalogos_bp = Blueprint("catalogos", __name__, url_prefix="/api/v1")
 # Catálogos de solo lectura: cualquier cuenta autenticada.
 catalogos_bp.before_request(autorizar_por_metodo)
+catalogos_bp.before_request(validar_parametros)
 
 
 @catalogos_bp.get("/tipos-usuario")

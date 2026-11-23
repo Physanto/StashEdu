@@ -8,20 +8,23 @@ from app.models.rol import ROL_ADMIN
 from app.security import validar_password, verificar_password
 from app.utils import (
     entero_positivo,
+    normalizar_email,
     obtener_json,
     validar_email,
+    validar_parametros,
     validar_requeridos,
     validar_textos,
 )
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/v1/auth")
+auth_bp.before_request(validar_parametros)
 
 
 @auth_bp.post("/register")
 @requiere_rol(ROL_ADMIN)
 def registrar():
     """Un admin crea la cuenta (rol + contraseña) de un usuario que ya existe."""
-    datos = obtener_json()
+    datos = obtener_json(("usuario_id", "password", "rol_id"))
     validar_requeridos(datos, ("usuario_id", "password", "rol_id"))
     usuario_id = entero_positivo(datos["usuario_id"], "usuario_id")
     rol_id = entero_positivo(datos["rol_id"], "rol_id")
@@ -33,7 +36,10 @@ def registrar():
 
     # FOR UPDATE: dos registros simultáneos de la misma persona no crean dos cuentas.
     usuario = db.session.scalar(
-        db.select(Usuario).where(Usuario.id == usuario_id).with_for_update()
+        db.select(Usuario)
+        .where(Usuario.id == usuario_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     if usuario is None:
         raise ErrorAPI("Usuario no encontrado.", 404)
@@ -50,9 +56,10 @@ def registrar():
 
 @auth_bp.post("/login")
 def login():
-    datos = obtener_json()
+    datos = obtener_json(("email", "password"))
     validar_requeridos(datos, ("email", "password"))
     validar_textos(datos, {"email": 120}, ("email",))
+    normalizar_email(datos)
     validar_email(datos["email"])
     if not isinstance(datos["password"], str):
         raise ErrorAPI("El campo 'password' debe ser texto.", 400)

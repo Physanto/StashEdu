@@ -11,6 +11,9 @@ def create_app(config_class=Config):
     if app.config.get("AUTH_TOKEN_MAX_AGE", 3600) <= 0:
         raise ValueError("AUTH_TOKEN_MAX_AGE debe ser positivo.")
     app.json.sort_keys = False  # respeta el orden de los campos en el JSON
+    # Flask trae MAX_CONTENT_LENGTH = None (sin límite): si la config no lo fija, 64 KB.
+    if app.config.get("MAX_CONTENT_LENGTH") is None:
+        app.config["MAX_CONTENT_LENGTH"] = 64 * 1024
 
     db.init_app(app)
     migrate.init_app(app, db)

@@ -38,7 +38,9 @@ class ReturnTests(APITestCase):
     def test_missing_invalid_and_inconsistent(self):
         self.assertEqual(self.client.post("/api/v1/prestamos/99/devolucion").status_code, 404)
         self.loan()
-        self.assertEqual(self.client.post("/api/v1/prestamos/1/devolucion", data="texto").status_code, 400)
+        # Sin Content-Type JSON → 415; JSON mal escrito → 400.
+        self.assertEqual(self.client.post("/api/v1/prestamos/1/devolucion", data="texto").status_code, 415)
+        self.assertEqual(self.client.post("/api/v1/prestamos/1/devolucion", data="texto", content_type="application/json").status_code, 400)
         self.assertEqual(
             self.client.post(
                 "/api/v1/prestamos/1/devolucion", json={"observaciones_devolucion": 5}

@@ -7,10 +7,14 @@ from app.models import Activo
 from app.models.activo import CATEGORIAS, ESTADOS, ESTADOS_EDITABLES
 from app.routes.prestamos import consultar_prestamos
 from app.utils import (
+    FILTROS_HISTORIAL,
+    PAGINACION,
+    acepta_parametros,
     filtro_opcion,
     obtener_json,
     paginar,
     validar_opcion,
+    validar_parametros,
     validar_requeridos,
     validar_textos,
 )
@@ -18,6 +22,7 @@ from app.utils import (
 activos_bp = Blueprint("activos", __name__, url_prefix="/api/v1/activos")
 # GET: cualquier rol · POST/PUT/PATCH: admin y operador · DELETE: solo admin.
 activos_bp.before_request(autorizar_por_metodo)
+activos_bp.before_request(validar_parametros)
 
 REQUERIDOS = ("codigo_inventario", "nombre", "categoria")
 EDITABLES = REQUERIDOS + ("marca", "modelo", "numero_serie", "estado")
@@ -28,7 +33,9 @@ def _obtener_o_404(activo_id, bloquear=False):
     # préstamo o una devolución que ocurra al mismo tiempo.
     consulta = db.select(Activo).where(Activo.id == activo_id)
     if bloquear:
-        consulta = consulta.with_for_update()
+        consulta = consulta.with_for_update().execution_options(
+            populate_existing=True
+        )
     activo = db.session.scalar(consulta)
     if activo is None:
         raise ErrorAPI("Activo no encontrado.", 404)
@@ -67,7 +74,7 @@ def _validar_unicos(datos, excluir_id=None):
 
 @activos_bp.post("")
 def crear_activo():
-    datos = obtener_json()
+    datos = obtener_json(EDITABLES)
     validar_requeridos(datos, REQUERIDOS)
     _validar(datos)
     _validar_unicos(datos)
@@ -79,6 +86,7 @@ def crear_activo():
 
 
 @activos_bp.get("")
+@acepta_parametros(*PAGINACION, "estado", "categoria")
 def listar_activos():
     consulta = db.select(Activo).order_by(Activo.id)
     # Aquí el filtro por estado sí acepta "prestado": es una búsqueda, no una edición.
@@ -97,6 +105,7 @@ def obtener_activo(activo_id):
 
 
 @activos_bp.get("/<int:activo_id>/prestamos")
+@acepta_parametros(*FILTROS_HISTORIAL)
 def historial_prestamos(activo_id):
     """Historial de préstamos del activo; admite ?estado=&desde=&hasta=."""
     _obtener_o_404(activo_id)
@@ -106,7 +115,7 @@ def historial_prestamos(activo_id):
 @activos_bp.route("/<int:activo_id>", methods=["PUT", "PATCH"])
 def actualizar_activo(activo_id):
     activo = _obtener_o_404(activo_id, bloquear=True)
-    datos = obtener_json()
+    datos = obtener_json(EDITABLES, no_vacio=request.method == "PATCH")
     if request.method == "PUT":
         validar_requeridos(datos, REQUERIDOS)
     _validar(datos)

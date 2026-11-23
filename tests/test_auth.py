@@ -39,7 +39,9 @@ class RegisterTests(APITestCase):
         for value in ("1", True, 0, 1.5):
             with self.subTest(usuario_id=value):
                 self.assertEqual(self.register(usuario_id=value).status_code, 400)
-        self.assertEqual(self.client.post("/api/v1/auth/register", data="texto").status_code, 400)
+        # Sin Content-Type JSON → 415; JSON mal escrito → 400.
+        self.assertEqual(self.client.post("/api/v1/auth/register", data="texto").status_code, 415)
+        self.assertEqual(self.client.post("/api/v1/auth/register", data="texto", content_type="application/json").status_code, 400)
         self.assertIsNone(db.session.get(Usuario, 1).password_hash)
 
     def test_register_conflicts(self):
@@ -101,7 +103,9 @@ class LoginTests(APITestCase):
         self.assertEqual(self.client.post("/api/v1/auth/login", json={"email": "admin@example.com"}).status_code, 400)
         self.assertEqual(self.login(email="sin-arroba").status_code, 400)
         self.assertEqual(self.login(password=123).status_code, 400)
-        self.assertEqual(self.client.post("/api/v1/auth/login", data="texto").status_code, 400)
+        # Sin Content-Type JSON → 415; JSON mal escrito → 400.
+        self.assertEqual(self.client.post("/api/v1/auth/login", data="texto").status_code, 415)
+        self.assertEqual(self.client.post("/api/v1/auth/login", data="texto", content_type="application/json").status_code, 400)
 
 
 class TokenTests(APITestCase):

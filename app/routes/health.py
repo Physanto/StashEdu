@@ -2,8 +2,10 @@ from flask import Blueprint, jsonify
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.extensions import db
+from app.utils import validar_parametros
 
 health_bp = Blueprint("health", __name__, url_prefix="/api/v1")
+health_bp.before_request(validar_parametros)
 
 
 @health_bp.get("/health")

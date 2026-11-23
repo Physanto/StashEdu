@@ -134,7 +134,9 @@ class LoanTests(APITestCase):
             with self.subTest(dias=value):
                 self.assertEqual(self.loan(dias=value).status_code, 400)
         self.assertEqual(self.loan(observaciones_entrega="x" * 1001).status_code, 400)
-        self.assertEqual(self.client.post("/api/v1/prestamos", data="texto").status_code, 400)
+        # Sin Content-Type JSON → 415; JSON mal escrito → 400.
+        self.assertEqual(self.client.post("/api/v1/prestamos", data="texto").status_code, 415)
+        self.assertEqual(self.client.post("/api/v1/prestamos", data="texto", content_type="application/json").status_code, 400)
         self.assertEqual(db.session.scalar(db.select(db.func.count(Prestamo.id))), 0)
 
     def test_unavailable_and_missing(self):
