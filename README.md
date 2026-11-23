@@ -3,10 +3,12 @@
 API REST para gestionar el préstamo de activos tecnológicos (portátiles, proyectores,
 tablets, cámaras…) de una institución educativa a estudiantes, docentes y funcionarios.
 
-> **Estado actual: Fase 3 — Seguridad.** Sobre la Fase 1 (Flask, conexión a MySQL/MariaDB,
-> modelos y CRUD de usuarios y activos) y la Fase 2 (préstamos, devoluciones, reglas de
-> negocio, consultas y filtros) se agregan registro/login, hash de contraseñas, JWT y
-> permisos por rol (`admin`, `operador`, `consulta`).
+> **Estado actual: Fase 4 — Calidad y documentación (proyecto completo).**
+> - Fase 1: Flask, conexión a MySQL/MariaDB, modelos y CRUD de usuarios y activos.
+> - Fase 2: préstamos, devoluciones, reglas de negocio, consultas y filtros.
+> - Fase 3: registro/login, hash de contraseñas, JWT y permisos por rol (`admin`, `operador`, `consulta`).
+> - Fase 4: manejo uniforme de errores HTTP, validación estricta de datos, documentación
+>   Swagger/OpenAPI en `/docs` y pruebas con Postman de las cuatro fases.
 
 ## Requisitos
 
@@ -99,7 +101,8 @@ Pide nombre, documento, email y contraseña (12 a 128 caracteres). Con
 python run.py
 ```
 
-La API queda disponible en `http://127.0.0.1:5000/api/v1`.
+La API queda disponible en `http://127.0.0.1:5000/api/v1` y su documentación interactiva
+(Swagger UI) en [`http://127.0.0.1:5000/docs`](http://127.0.0.1:5000/docs).
 
 ## Probar la Fase 1
 
@@ -189,7 +192,7 @@ curl -X DELETE http://127.0.0.1:5000/api/v1/usuarios/1 -H "Authorization: Bearer
 | Caso | Petición | Respuesta esperada |
 |---|---|---|
 | Faltan campos obligatorios | `POST /usuarios` con `{"nombre_completo": "Ana"}` | 400 y la lista de campos faltantes |
-| Cuerpo que no es JSON | `POST /usuarios` con texto plano | 400 |
+| Cuerpo que no es JSON | `POST /usuarios` con texto plano | 415 |
 | Correo inválido | `"email": "ana-sin-arroba"` | 400 |
 | Tipo de usuario inexistente | `"tipo_usuario_id": 99` | 400 |
 | Documento o correo repetido | Crear dos veces el mismo usuario | 409 |
@@ -427,6 +430,102 @@ primer admin (paso 5) y escribe su correo y contraseña en las variables `admin_
 | Cuenta repetida | Registrar dos veces el mismo usuario | 409 |
 | Falta `SECRET_KEY` en `.env` | Cualquier ruta protegida | 503 |
 
+## Probar la Fase 4
+
+### Documentación con Swagger/OpenAPI
+
+Con la API en marcha:
+
+- **Swagger UI:** [`http://127.0.0.1:5000/docs`](http://127.0.0.1:5000/docs). Lista todas las
+  rutas con sus campos, parámetros, respuestas y errores. Para probar rutas protegidas:
+  ejecuta `POST /api/v1/auth/login` (**Try it out**), copia el `access_token`, pulsa
+  **Authorize** y pégalo.
+- **Contrato OpenAPI 3.0.3:** [`http://127.0.0.1:5000/openapi.json`](http://127.0.0.1:5000/openapi.json).
+  Se puede importar en Postman (**Import → Link**).
+
+Swagger UI se sirve desde el propio servidor (sin CDN) y el contrato lo genera
+[`app/openapi.py`](app/openapi.py). Una prueba automática comprueba que documente
+exactamente las rutas y los parámetros de consulta que la API implementa.
+
+### Manejo de errores HTTP
+
+Todo error responde JSON con la misma forma: `{"error": "mensaje", "detalles": {...}}`
+(`detalles` solo cuando aporta información, por ejemplo qué campos faltan o sobran).
+
+| Código | Cuándo |
+|---|---|
+| 400 | Datos o parámetros inválidos, campos desconocidos, JSON mal escrito |
+| 401 | Sin token, token inválido o vencido (incluye `WWW-Authenticate: Bearer`) |
+| 403 | El rol no permite la operación |
+| 404 | El recurso o la ruta no existe |
+| 405 | Método no permitido (incluye el header `Allow` con los métodos válidos) |
+| 409 | Conflicto con el estado de los datos: duplicados, activo no disponible, dos operaciones a la vez |
+| 413 | El cuerpo supera 64 KB |
+| 415 | El cuerpo no se envía como `Content-Type: application/json` |
+| 500 | Error inesperado (el detalle queda en el log, nunca en la respuesta) |
+| 503 | La base de datos no responde o falta `SECRET_KEY` |
+
+### Validación de datos
+
+- **Cuerpo:** debe ser un objeto JSON con `Content-Type: application/json`. Los campos que la
+  ruta no admite se rechazan (por ejemplo `password_hash` o `fecha_vencimiento`), no se
+  ignoran. Un `PATCH` vacío es 400.
+- **Tipos y rangos:** los ids son enteros entre 1 y 2147483647 (`true`, `"1"` o `1.0` no son
+  ids); los textos respetan su longitud máxima y no admiten caracteres nulos ni Unicode inválido.
+- **Correos:** se guardan sin espacios y en minúsculas; `Ana@Uni.edu` y `ana@uni.edu` son el mismo.
+- **Parámetros de la URL:** cada listado acepta solo sus filtros documentados; uno desconocido
+  o repetido es 400. `page` ≥ 1 y `per_page` entre 1 y 100.
+- **Concurrencia:** las restricciones de la base de datos (UNIQUE, CHECK, claves foráneas) son
+  la última defensa. Si dos peticiones chocan, la segunda recibe 409, nunca un 500 o un 503.
+
+### Colección de Postman
+
+[`docs/postman/StashEdu_fase4.postman_collection.json`](docs/postman/StashEdu_fase4.postman_collection.json)
+prueba la documentación, los errores HTTP y la validación de cuerpos y parámetros (33 peticiones,
+70 aserciones). Se configura igual que la de la Fase 3: variables `admin_email` y
+`admin_password`; si la API no usa el puerto 5000, cambia también `base_url` y `root_url`.
+
+Las tres colecciones ([Fase 2](docs/postman/StashEdu_fase2.postman_collection.json),
+[Fase 3](docs/postman/StashEdu_fase3.postman_collection.json) y
+[Fase 4](docs/postman/StashEdu_fase4.postman_collection.json)) se pueden ejecutar también
+desde la terminal con el [Postman CLI](https://learning.postman.com/docs/postman-cli/postman-cli-overview/):
+
+```bash
+postman collection run docs/postman/StashEdu_fase4.postman_collection.json \
+  --env-var admin_email=admin@uni.edu.co --env-var "admin_password=<tu contraseña>"
+```
+
+### Pruebas automatizadas
+
+```bash
+pip install -r requirements-dev.txt      # incluye el validador de OpenAPI
+python -m unittest discover -v           # SQLite en memoria: no toca tu base de datos
+```
+
+Las pruebas de concurrencia (dos préstamos o dos devoluciones al mismo tiempo, rollback y
+migraciones) necesitan MySQL/MariaDB real y son opcionales. Crean y borran un esquema
+temporal `test_stashedu_…`, así que el usuario de `.env` necesita permiso sobre `test\_%`:
+
+```bash
+RUN_MYSQL_TESTS=1 python -m unittest tests.test_mysql_integration -v
+# PowerShell: $env:RUN_MYSQL_TESTS='1'; python -m unittest tests.test_mysql_integration -v
+```
+
+### Casos de error para probar
+
+| Caso | Petición | Respuesta esperada |
+|---|---|---|
+| Sin `Content-Type: application/json` | `POST /usuarios` con texto plano | 415 |
+| Campo no permitido | `POST /usuarios` con `"password_hash": "x"` | 400 y `detalles.campos` |
+| `PATCH` vacío | `PATCH /activos/1` con `{}` | 400 |
+| Id fuera de rango | `GET /usuarios/0` o `"usuario_id": 2147483648` | 400 |
+| Parámetro desconocido o repetido | `GET /usuarios?orden=desc`, `?estado=a&estado=b` | 400 y `detalles.parametros` |
+| Paginación inválida | `?page=0` o `?per_page=101` | 400 |
+| Fecha mal escrita | `GET /prestamos?desde=20261001` | 400 |
+| Cuerpo enorme | Más de 64 KB | 413 |
+| Ruta inexistente | `GET /api/v1/no-existe` | 404 `Recurso no encontrado.` |
+| Método no permitido | `DELETE /prestamos` | 405 con header `Allow` |
+
 ## Solución de problemas
 
 | Síntoma | Causa probable |
@@ -437,6 +536,11 @@ primer admin (paso 5) y escribe su correo y contraseña en las variables `admin_
 | `Table ... doesn't exist` | Falta `flask --app run db upgrade` (paso 4) |
 | Todo responde 401 | Falta el header `Authorization: Bearer <token>` o el token expiró: vuelve a iniciar sesión |
 | Toda ruta protegida responde 503 | Falta `SECRET_KEY` (32+ caracteres) en `.env` |
+| 415 en un `POST`/`PUT`/`PATCH` | Falta el header `Content-Type: application/json` (en Postman: **Body → raw → JSON**) |
+| 400 `Hay campos no permitidos.` | El cuerpo trae un campo que la ruta no admite: revisa `detalles.campos` o `/docs` |
+| 400 `Parámetros de consulta no permitidos.` | La URL trae un filtro que esa ruta no tiene: revisa `detalles.permitidos` |
+| `/docs` no carga | Falta `pip install -r requirements.txt` (instala `flask-swagger-ui`) |
+| Pruebas MySQL: `Access denied ... to database 'test_stashedu_…'` | El usuario de `.env` no tiene permisos sobre `test\_%`: ``GRANT ALL ON `test\_%`.* TO 'stashedu'@'localhost';`` |
 | `Can't locate revision ...` | La base fue creada con migraciones antiguas: bórrala (`DROP DATABASE prestamos_activos;`) y repite los pasos 2 y 4 |
 
 ## Documentación
@@ -444,3 +548,5 @@ primer admin (paso 5) y escribe su correo y contraseña en las variables `admin_
 - [`docs/diagrama_er.png`](docs/diagrama_er.png): modelo entidad-relación.
 - [`docs/esquema_bd.sql`](docs/esquema_bd.sql): diseño completo de la base de datos
   (referencia; las tablas se crean con las migraciones).
+- `/docs` y `/openapi.json` (con la API en marcha): contrato OpenAPI y Swagger UI.
+- [`docs/postman/`](docs/postman/): colecciones de Postman de las Fases 2, 3 y 4.
